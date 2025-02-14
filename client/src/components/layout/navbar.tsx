@@ -6,7 +6,7 @@ import { i18n } from "@/lib/i18n";
 
 export function Navbar() {
   return (
-    <nav className="border-b bg-white">
+    <nav className="sticky top-0 z-50 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <div className="flex items-center gap-8">
           <Link href="/">
@@ -14,10 +14,19 @@ export function Navbar() {
           </Link>
           <div className="hidden md:flex items-center gap-6">
             <Link href="/courses">
-              <a className="text-sm font-medium">{i18n.common.courses}</a>
+              <a className="text-sm font-medium hover:text-primary transition-colors">
+                {i18n.common.courses}
+              </a>
             </Link>
             <Link href="/teachers">
-              <a className="text-sm font-medium">{i18n.common.teachers}</a>
+              <a className="text-sm font-medium hover:text-primary transition-colors">
+                {i18n.common.teachers}
+              </a>
+            </Link>
+            <Link href="/about">
+              <a className="text-sm font-medium hover:text-primary transition-colors">
+                {i18n.common.about}
+              </a>
             </Link>
           </div>
         </div>
@@ -30,7 +39,9 @@ export function Navbar() {
               className="pl-8"
             />
           </div>
-          <Button variant="outline">Đăng nhập</Button>
+          <Button variant="outline" className="font-medium">
+            Đăng nhập
+          </Button>
         </div>
       </div>
     </nav>
