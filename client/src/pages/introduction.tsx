@@ -3,10 +3,10 @@ import React from 'react';
 export default function IntroductionPage() {
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Giới thiệu về TOPIK Online</h1>
+      <h1 className="text-3xl font-bold mb-6">Giới thiệu về SEED-TOPIK</h1>
       <div className="prose max-w-none">
         <p className="text-lg mb-4">
-          TOPIK Online là nền tảng ôn luyện thi TOPIK trực tuyến hàng đầu Việt Nam, cung cấp các khóa học và tài liệu chất lượng cao để giúp học viên đạt được mục tiêu trong kỳ thi TOPIK.
+          SEED-TOPIK là nền tảng ôn luyện thi TOPIK trực tuyến hàng đầu Việt Nam, cung cấp các khóa học và tài liệu chất lượng cao để giúp học viên đạt được mục tiêu trong kỳ thi TOPIK.
         </p>
 
         <h2 className="text-2xl font-bold mt-8 mb-4">Các tính năng chính</h2>

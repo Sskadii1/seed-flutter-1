@@ -175,7 +175,7 @@ export default function AuthPage() {
       <div className="hidden lg:flex flex-1 bg-muted items-center justify-center p-12">
         <div className="max-w-lg">
           <h1 className="text-4xl font-bold mb-4">
-            Luyện thi TOPIK Online
+            Luyện thi SEED-TOPIK
           </h1>
           <p className="text-lg text-muted-foreground">
             Nền tảng ôn luyện thi TOPIK trực tuyến hàng đầu Việt Nam. Với ngân hàng đề thi phong phú và các bài luyện tập chất lượng cao, chúng tôi sẽ giúp bạn đạt được mục tiêu trong kỳ thi TOPIK.
