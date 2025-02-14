@@ -74,7 +74,13 @@ export const studyTips = pgTable("study_tips", {
   likes: integer("likes").notNull().default(0),
   category: text("category").notNull(), // general, grammar, vocabulary, etc.
   imageUrl: text("image_url"), // Optional image for the post
-  comments: jsonb("comments").notNull().default([]), // Array of comments
+  comments: jsonb("comments").$type<{
+    id: number;
+    userId: number;
+    userName: string;
+    content: string;
+    createdAt: Date;
+  }[]>().notNull().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

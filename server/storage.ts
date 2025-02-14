@@ -169,6 +169,36 @@ export class MemStorage implements IStorage {
       const newExam = { ...exam, id };
       this.practiceExams.set(id, newExam);
     });
+
+    // Create mock study tips
+    const tips = [
+      {
+        title: "Cách học từ vựng hiệu quả",
+        content: "1. Học từ vựng theo chủ đề\n2. Sử dụng flashcards\n3. Thực hành với native speaker\n4. Viết nhật ký bằng tiếng Hàn",
+        authorId: 1,
+        likes: 15,
+        category: "vocabulary",
+        imageUrl: null,
+        comments: [],
+        createdAt: new Date()
+      },
+      {
+        title: "Kinh nghiệm thi TOPIK II",
+        content: "Chia sẻ kinh nghiệm đạt điểm cao trong kỳ thi TOPIK II vừa qua:\n- Luyện nghe nhiều\n- Làm các đề thi thử\n- Học nhóm cùng bạn bè",
+        authorId: 2,
+        likes: 23,
+        category: "exam",
+        imageUrl: null,
+        comments: [],
+        createdAt: new Date()
+      }
+    ];
+
+    tips.forEach(tip => {
+      const id = this.tipId++;
+      const newTip = { ...tip, id };
+      this.studyTips.set(id, newTip);
+    });
   }
 
   // Implement existing methods
