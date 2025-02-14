@@ -3,8 +3,7 @@ const vi = {
     search: "Tìm kiếm",
     courses: "Khóa học",
     teachers: "Giảng viên",
-    about: "Về chúng tôi",
-    contact: "Liên hệ",
+    login: "Đăng nhập",
     price: "Học phí",
     duration: "Thời lượng",
     hours: "giờ",
@@ -12,6 +11,14 @@ const vi = {
       beginner: "Sơ cấp",
       intermediate: "Trung cấp",
       advanced: "Cao cấp"
+    },
+    menu: {
+      introduction: "GIỚI THIỆU",
+      selfStudy: "TỰ ÔN LUYỆN",
+      studyTogether: "CÙNG ÔN LUYỆN",
+      examPrep: "ÔN THI",
+      experience: "KINH NGHIỆM",
+      profile: "TRANG CÁ NHÂN"
     }
   },
   home: {
