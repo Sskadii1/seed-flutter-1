@@ -13,7 +13,10 @@ export function Navbar() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <Link href="/">
-            <a className="font-bold text-xl text-primary">SEED-TOPIK</a>
+            <a className="flex items-center gap-2">
+              <img src="/logo.png" alt="SEED-TOPIK Logo" className="h-8 w-auto" />
+              <span className="font-bold text-xl text-primary">SEED-TOPIK</span>
+            </a>
           </Link>
 
           <div className="flex items-center gap-4">
