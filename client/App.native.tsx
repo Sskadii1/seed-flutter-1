@@ -5,16 +5,32 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./src/lib/queryClient";
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { HomeScreen } from './src/screens/HomeScreen';
+import { CoursesScreen } from './src/screens/CoursesScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
+import type { RootStackParamList } from './src/navigation';
 
-const Stack = createNativeStackNavigator();
-const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tab = createBottomTabNavigator<RootStackParamList>();
 
 function TabNavigator() {
   return (
     <Tab.Navigator>
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Courses" component={CoursesScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen 
+        name="Home" 
+        component={HomeScreen}
+        options={{ title: 'Trang chủ' }}
+      />
+      <Tab.Screen 
+        name="Courses" 
+        component={CoursesScreen}
+        options={{ title: 'Khóa học' }}
+      />
+      <Tab.Screen 
+        name="Profile" 
+        component={ProfileScreen}
+        options={{ title: 'Cá nhân' }}
+      />
     </Tab.Navigator>
   );
 }
@@ -30,8 +46,6 @@ function App() {
               component={TabNavigator}
               options={{ headerShown: false }}
             />
-            <Stack.Screen name="CourseDetails" component={CourseDetailsScreen} />
-            <Stack.Screen name="TeacherProfile" component={TeacherProfileScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>

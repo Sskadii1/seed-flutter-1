@@ -3,8 +3,14 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { Course, Teacher } from '@shared/schema';
 import { i18n } from '@/lib/i18n';
+import { CourseCard } from '@/components/CourseCard.native';
+import { TeacherCard } from '@/components/TeacherCard.native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '@/navigation';
 
-export function HomeScreen({ navigation }) {
+type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
+
+export function HomeScreen({ navigation }: Props) {
   const { data: courses, isLoading: coursesLoading } = useQuery<Course[]>({
     queryKey: ['/api/courses']
   });
