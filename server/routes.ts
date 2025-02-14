@@ -118,6 +118,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(tip);
   });
 
+  app.post("/api/study-tips", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const tip = await storage.createStudyTip({
+      ...req.body,
+      authorId: req.user.id,
+    });
+    res.status(201).json(tip);
+  });
+
+  app.post("/api/study-tips/:id/like", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const id = parseInt(req.params.id);
+    const tip = await storage.likeTip(id);
+    res.json(tip);
+  });
+
+  app.post("/api/study-tips/:id/comment", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const id = parseInt(req.params.id);
+    const { content } = req.body;
+    const tip = await storage.addComment(id, req.user.id, content);
+    res.json(tip);
+  });
+
+
   // User progress routes
   app.get("/api/users/:userId/progress", async (req, res) => {
     const userId = parseInt(req.params.userId);

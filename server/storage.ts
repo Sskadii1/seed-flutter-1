@@ -25,6 +25,9 @@ export interface IStorage {
   // Study Tips
   getStudyTips(): Promise<StudyTip[]>;
   getStudyTip(id: number): Promise<StudyTip | undefined>;
+  createStudyTip(tip: Omit<StudyTip, 'id' | 'likes' | 'comments' | 'createdAt'>): Promise<StudyTip>;
+  likeTip(id: number): Promise<StudyTip>;
+  addComment(tipId: number, userId: number, content: string): Promise<StudyTip>;
   searchStudyTips(category: string): Promise<StudyTip[]>;
 
   // User Progress
@@ -253,6 +256,56 @@ export class MemStorage implements IStorage {
 
   async getStudyTip(id: number): Promise<StudyTip | undefined> {
     return this.studyTips.get(id);
+  }
+
+  async createStudyTip(tip: Omit<StudyTip, 'id' | 'likes' | 'comments' | 'createdAt'>): Promise<StudyTip> {
+    const id = this.tipId++;
+    const newTip = {
+      ...tip,
+      id,
+      likes: 0,
+      comments: [],
+      createdAt: new Date(),
+    };
+    this.studyTips.set(id, newTip);
+    return newTip;
+  }
+
+  async likeTip(id: number): Promise<StudyTip> {
+    const tip = this.studyTips.get(id);
+    if (!tip) {
+      throw new Error('Study tip not found');
+    }
+    const updatedTip = {
+      ...tip,
+      likes: tip.likes + 1,
+    };
+    this.studyTips.set(id, updatedTip);
+    return updatedTip;
+  }
+
+  async addComment(tipId: number, userId: number, content: string): Promise<StudyTip> {
+    const tip = this.studyTips.get(tipId);
+    if (!tip) {
+      throw new Error('Study tip not found');
+    }
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+    const comment = {
+      id: Date.now(),
+      userId,
+      userName: user.name,
+      content,
+      createdAt: new Date(),
+    };
+    const updatedTip = {
+      ...tip,
+      comments: [...tip.comments, comment],
+    };
+    this.studyTips.set(tipId, updatedTip);
+    return updatedTip;
   }
 
   async searchStudyTips(category: string): Promise<StudyTip[]> {

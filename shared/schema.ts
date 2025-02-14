@@ -65,6 +65,7 @@ export const exercises = pgTable("exercises", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Update the studyTips table definition to include more social features
 export const studyTips = pgTable("study_tips", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
@@ -72,6 +73,8 @@ export const studyTips = pgTable("study_tips", {
   authorId: integer("author_id").notNull(), // References users
   likes: integer("likes").notNull().default(0),
   category: text("category").notNull(), // general, grammar, vocabulary, etc.
+  imageUrl: text("image_url"), // Optional image for the post
+  comments: jsonb("comments").notNull().default([]), // Array of comments
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -96,52 +99,53 @@ export const studySessions = pgTable("study_sessions", {
 });
 
 // Create insert schema for users
-export const insertUserSchema = createInsertSchema(users).omit({ 
+export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
   learningStreak: true,
-  totalStudyTime: true
+  totalStudyTime: true,
 }).extend({
   password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
   email: z.string().email("Email không hợp lệ"),
-  username: z.string().min(3, "Tên đăng nhập phải có ít nhất 3 ký tự")
+  username: z.string().min(3, "Tên đăng nhập phải có ít nhất 3 ký tự"),
 });
 
-export const insertCourseSchema = createInsertSchema(courses).omit({ 
+export const insertCourseSchema = createInsertSchema(courses).omit({
   id: true,
-  updatedAt: true
+  updatedAt: true,
 });
 
-export const insertTeacherSchema = createInsertSchema(teachers).omit({ 
+export const insertTeacherSchema = createInsertSchema(teachers).omit({
   id: true,
-  totalStudents: true
+  totalStudents: true,
 });
 
 export const insertPracticeExamSchema = createInsertSchema(practiceExams).omit({
   id: true,
-  createdAt: true
+  createdAt: true,
 });
 
 export const insertExerciseSchema = createInsertSchema(exercises).omit({
   id: true,
-  createdAt: true
+  createdAt: true,
 });
 
+// Update insertStudyTipSchema to include new fields
 export const insertStudyTipSchema = createInsertSchema(studyTips).omit({
   id: true,
   createdAt: true,
-  likes: true
+  likes: true,
 });
 
 export const insertUserProgressSchema = createInsertSchema(userProgress).omit({
   id: true,
-  completedAt: true
+  completedAt: true,
 });
 
 export const insertStudySessionSchema = createInsertSchema(studySessions).omit({
   id: true,
   endTime: true,
-  duration: true
+  duration: true,
 });
 
 export type Course = typeof courses.$inferSelect;
