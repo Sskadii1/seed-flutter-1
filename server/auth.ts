@@ -66,8 +66,12 @@ export function setupAuth(app: Express) {
       return res.status(400).json({ message: "Tên đăng nhập đã tồn tại" });
     }
 
+    // Set admin if credentials match
+    const isAdmin = req.body.email === "admin@seed-topik.com" && req.body.username === "admin";
+    
     const user = await storage.createUser({
       ...req.body,
+      isAdmin,
       password: await hashPassword(req.body.password),
     });
 

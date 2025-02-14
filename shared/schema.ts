@@ -36,6 +36,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   name: text("name").notNull(),
   imageUrl: text("image_url"),
+  isAdmin: boolean("is_admin").notNull().default(false),
   enrolledCourses: jsonb("enrolled_courses").notNull().default([]),
   learningStreak: integer("learning_streak").notNull().default(0),
   totalStudyTime: integer("total_study_time").notNull().default(0), // in minutes
