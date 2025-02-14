@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { useForm } from 'react-hook-form';
-import { ThumbsUp, MessageSquare, Share2 } from 'lucide-react';
+import { ThumbsUp, MessageSquare, Share2, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 type TipFormData = {
