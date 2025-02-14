@@ -39,8 +39,11 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen flex">
-      <div className="flex-1 flex items-center justify-center">
+    <div className="min-h-screen flex relative">
+      <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+        <img src="/logo.png" alt="Background Logo" className="w-[80vh] h-[80vh]" />
+      </div>
+      <div className="flex-1 flex items-center justify-center relative z-10">
         <Card className="w-[400px]">
           <CardHeader>
             <CardTitle>TOPIK Online</CardTitle>
