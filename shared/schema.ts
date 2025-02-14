@@ -165,4 +165,16 @@ export type PracticeExam = typeof practiceExams.$inferSelect;
 export type Exercise = typeof exercises.$inferSelect;
 export type StudyTip = typeof studyTips.$inferSelect;
 export type UserProgress = typeof userProgress.$inferSelect;
+export const supportTickets = pgTable("support_tickets", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  status: text("status").notNull(), // open, in-progress, resolved
+  adminResponse: text("admin_response"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export type StudySession = typeof studySessions.$inferSelect;
+export type SupportTicket = typeof supportTickets.$inferSelect;

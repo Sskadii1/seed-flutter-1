@@ -111,6 +111,17 @@ export default function ExperiencePage() {
                 <Share2 className="h-4 w-4" />
                 <span>Chia sẻ</span>
               </Button>
+              {user?.isAdmin && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="flex gap-2 text-destructive" 
+                  onClick={() => onDeleteTip(tip.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Xóa</span>
+                </Button>
+              )}
             </CardFooter>
           </Card>
         ))}

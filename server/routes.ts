@@ -151,6 +151,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(tip);
   });
 
+  app.delete("/api/study-tips/:id", async (req, res) => {
+    if (!req.isAuthenticated() || !req.user.isAdmin) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const id = parseInt(req.params.id);
+    await storage.deleteStudyTip(id);
+    res.status(204).send();
+  });
+
+  // Admin routes for managing courses
+  app.post("/api/courses", async (req, res) => {
+    if (!req.isAuthenticated() || !req.user.isAdmin) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const course = await storage.createCourse(req.body);
+    res.status(201).json(course);
+  });
+
+  app.delete("/api/courses/:id", async (req, res) => {
+    if (!req.isAuthenticated() || !req.user.isAdmin) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const id = parseInt(req.params.id);
+    await storage.deleteCourse(id);
+    res.status(204).send();
+  });
+
+  // Support ticket routes
+  app.post("/api/support-tickets", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const ticket = await storage.createSupportTicket({
+      ...req.body,
+      userId: req.user.id,
+      status: 'open'
+    });
+    res.status(201).json(ticket);
+  });
+
+  app.get("/api/support-tickets", async (req, res) => {
+    if (!req.isAuthenticated() || !req.user.isAdmin) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const tickets = await storage.getSupportTickets();
+    res.json(tickets);
+  });
+
 
   // User progress routes
   app.get("/api/users/:userId/progress", async (req, res) => {
