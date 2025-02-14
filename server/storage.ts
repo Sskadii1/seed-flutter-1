@@ -1,4 +1,4 @@
-import { Course, Teacher, InsertCourse, InsertTeacher, PracticeExam, Exercise, StudyTip, UserProgress, StudySession } from "@shared/schema";
+import { Course, Teacher, InsertCourse, InsertTeacher, PracticeExam, Exercise, StudyTip, UserProgress, StudySession, User, InsertUser } from "@shared/schema";
 
 export interface IStorage {
   // Courses
@@ -35,6 +35,11 @@ export interface IStorage {
   getStudySessions(userId: number): Promise<StudySession[]>;
   startStudySession(userId: number, activityType: string, activityId: number): Promise<StudySession>;
   endStudySession(sessionId: number): Promise<void>;
+
+  // User Authentication
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
 }
 
 export class MemStorage implements IStorage {
@@ -45,6 +50,7 @@ export class MemStorage implements IStorage {
   private studyTips: Map<number, StudyTip>;
   private userProgress: Map<number, UserProgress[]>;
   private studySessions: Map<number, StudySession>;
+  private users: Map<number, User>;
 
   private courseId: number = 1;
   private teacherId: number = 1;
@@ -52,6 +58,7 @@ export class MemStorage implements IStorage {
   private exerciseId: number = 1;
   private tipId: number = 1;
   private sessionId: number = 1;
+  private userId: number = 1;
 
   constructor() {
     this.courses = new Map();
@@ -61,6 +68,7 @@ export class MemStorage implements IStorage {
     this.studyTips = new Map();
     this.userProgress = new Map();
     this.studySessions = new Map();
+    this.users = new Map();
     this.initializeData();
   }
 
@@ -112,7 +120,7 @@ export class MemStorage implements IStorage {
         title: "TOPIK II - Trung cấp",
         description: "Luyện thi chuyên sâu TOPIK cấp độ 3-4",
         imageUrl: "https://images.unsplash.com/photo-1493723843671-1d655e66ac1c",
-        level: "intermediate", 
+        level: "intermediate",
         duration: 45,
         price: 2500000,
         teacherId: 2,
@@ -171,7 +179,7 @@ export class MemStorage implements IStorage {
 
   async searchCourses(query: string): Promise<Course[]> {
     const courses = Array.from(this.courses.values());
-    return courses.filter(course => 
+    return courses.filter(course =>
       course.title.toLowerCase().includes(query.toLowerCase()) ||
       course.description.toLowerCase().includes(query.toLowerCase())
     );
@@ -179,9 +187,9 @@ export class MemStorage implements IStorage {
 
   async createCourse(course: InsertCourse): Promise<Course> {
     const id = this.courseId++;
-    const newCourse = { 
-      ...course, 
-      id, 
+    const newCourse = {
+      ...course,
+      id,
       sections: [],
       isFeatured: false,
       videoUrl: null,
@@ -201,8 +209,8 @@ export class MemStorage implements IStorage {
 
   async createTeacher(teacher: InsertTeacher): Promise<Teacher> {
     const id = this.teacherId++;
-    const newTeacher = { 
-      ...teacher, 
+    const newTeacher = {
+      ...teacher,
       id,
       socialLinks: {},
       rating: 5,
@@ -212,7 +220,7 @@ export class MemStorage implements IStorage {
     return newTeacher;
   }
 
-  // Implement new methods
+
   async getPracticeExams(): Promise<PracticeExam[]> {
     return Array.from(this.practiceExams.values());
   }
@@ -293,6 +301,30 @@ export class MemStorage implements IStorage {
         duration
       });
     }
+  }
+
+  async getUser(id: number): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.username === username
+    );
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const id = this.userId++;
+    const newUser = {
+      ...user,
+      id,
+      enrolledCourses: [],
+      learningStreak: 0,
+      totalStudyTime: 0,
+      createdAt: new Date(),
+    };
+    this.users.set(id, newUser);
+    return newUser;
   }
 }
 

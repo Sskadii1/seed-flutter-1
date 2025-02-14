@@ -28,9 +28,12 @@ export const teachers = pgTable("teachers", {
   totalStudents: integer("total_students").notNull().default(0),
 });
 
+// Update users table to include auth fields
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
   name: text("name").notNull(),
   imageUrl: text("image_url"),
   enrolledCourses: jsonb("enrolled_courses").notNull().default([]),
@@ -39,7 +42,6 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-// New tables for practice and tracking
 export const practiceExams = pgTable("practice_exams", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
@@ -93,20 +95,18 @@ export const studySessions = pgTable("study_sessions", {
   activityId: integer("activity_id").notNull(), // References the specific activity
 });
 
-// Export types and insert schemas
-export type Course = typeof courses.$inferSelect;
-export type InsertCourse = z.infer<typeof insertCourseSchema>;
-export type Teacher = typeof teachers.$inferSelect;
-export type InsertTeacher = z.infer<typeof insertTeacherSchema>;
-export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type PracticeExam = typeof practiceExams.$inferSelect;
-export type Exercise = typeof exercises.$inferSelect;
-export type StudyTip = typeof studyTips.$inferSelect;
-export type UserProgress = typeof userProgress.$inferSelect;
-export type StudySession = typeof studySessions.$inferSelect;
+// Create insert schema for users
+export const insertUserSchema = createInsertSchema(users).omit({ 
+  id: true,
+  createdAt: true,
+  learningStreak: true,
+  totalStudyTime: true
+}).extend({
+  password: z.string().min(6, "Mật khẩu phải có ít nhất 6 ký tự"),
+  email: z.string().email("Email không hợp lệ"),
+  username: z.string().min(3, "Tên đăng nhập phải có ít nhất 3 ký tự")
+});
 
-// Create insert schemas
 export const insertCourseSchema = createInsertSchema(courses).omit({ 
   id: true,
   updatedAt: true
@@ -115,13 +115,6 @@ export const insertCourseSchema = createInsertSchema(courses).omit({
 export const insertTeacherSchema = createInsertSchema(teachers).omit({ 
   id: true,
   totalStudents: true
-});
-
-export const insertUserSchema = createInsertSchema(users).omit({ 
-  id: true,
-  createdAt: true,
-  learningStreak: true,
-  totalStudyTime: true
 });
 
 export const insertPracticeExamSchema = createInsertSchema(practiceExams).omit({
@@ -150,3 +143,15 @@ export const insertStudySessionSchema = createInsertSchema(studySessions).omit({
   endTime: true,
   duration: true
 });
+
+export type Course = typeof courses.$inferSelect;
+export type InsertCourse = z.infer<typeof insertCourseSchema>;
+export type Teacher = typeof teachers.$inferSelect;
+export type InsertTeacher = z.infer<typeof insertTeacherSchema>;
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type PracticeExam = typeof practiceExams.$inferSelect;
+export type Exercise = typeof exercises.$inferSelect;
+export type StudyTip = typeof studyTips.$inferSelect;
+export type UserProgress = typeof userProgress.$inferSelect;
+export type StudySession = typeof studySessions.$inferSelect;

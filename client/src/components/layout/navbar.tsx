@@ -2,9 +2,12 @@ import { Link } from "wouter";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
 import { i18n } from "@/lib/i18n";
 
 export function Navbar() {
+  const { user, logoutMutation } = useAuth();
+
   return (
     <nav className="sticky top-0 z-50 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="container mx-auto px-4">
@@ -21,9 +24,21 @@ export function Navbar() {
                 className="pl-8"
               />
             </div>
-            <Button variant="outline" className="font-medium">
-              {i18n.common.login}
-            </Button>
+            {user ? (
+              <Button 
+                variant="outline" 
+                className="font-medium"
+                onClick={() => logoutMutation.mutate()}
+              >
+                Đăng xuất
+              </Button>
+            ) : (
+              <Link href="/auth">
+                <Button variant="outline" className="font-medium">
+                  {i18n.common.login}
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 
@@ -53,11 +68,13 @@ export function Navbar() {
               {i18n.common.menu.experience}
             </a>
           </Link>
-          <Link href="/profile">
-            <a className="text-sm font-medium hover:text-primary transition-colors whitespace-nowrap">
-              {i18n.common.menu.profile}
-            </a>
-          </Link>
+          {user && (
+            <Link href="/profile">
+              <a className="text-sm font-medium hover:text-primary transition-colors whitespace-nowrap">
+                {i18n.common.menu.profile}
+              </a>
+            </Link>
+          )}
         </div>
       </div>
     </nav>
