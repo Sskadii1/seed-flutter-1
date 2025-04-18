@@ -28,7 +28,7 @@ export const teachers = pgTable("teachers", {
   totalStudents: integer("total_students").notNull().default(0),
 });
 
-// Update users table to include auth fields
+// Update users table to include auth fields and role-based access
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
@@ -36,11 +36,14 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   name: text("name").notNull(),
   imageUrl: text("image_url"),
-  isAdmin: boolean("is_admin").notNull().default(false),
+  // Role-based access control: "guest", "user", "paid_user", "teacher", "manager", "admin"
+  role: text("role").notNull().default("user"),
+  isPaid: boolean("is_paid").notNull().default(false), // Whether the user has a paid subscription
   enrolledCourses: jsonb("enrolled_courses").notNull().default([]),
   learningStreak: integer("learning_streak").notNull().default(0),
   totalStudyTime: integer("total_study_time").notNull().default(0), // in minutes
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  subscriptionExpiryDate: timestamp("subscription_expiry_date"), // When the paid subscription expires
 });
 
 export const practiceExams = pgTable("practice_exams", {
@@ -176,5 +179,62 @@ export const supportTickets = pgTable("support_tickets", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Add chat messages table
+export const chatMessages = pgTable("chat_messages", {
+  id: serial("id").primaryKey(),
+  senderId: integer("sender_id").notNull(),
+  receiverId: integer("receiver_id").notNull(),
+  content: text("content").notNull(),
+  attachmentUrl: text("attachment_url"), // For images, files, etc.
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Add dictionary table for vocabulary
+export const dictionary = pgTable("dictionary", {
+  id: serial("id").primaryKey(),
+  korean: text("korean").notNull(),
+  vietnamese: text("vietnamese").notNull(),
+  english: text("english"),
+  pronunciation: text("pronunciation"),
+  level: text("level").notNull(), // beginner, intermediate, advanced
+  exampleSentence: text("example_sentence"),
+  category: text("category").notNull(), // grammar, vocabulary, etc.
+  addedBy: integer("added_by").notNull(), // References user id who added the word
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Add user achievements and badges
+export const userAchievements = pgTable("user_achievements", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  achievementType: text("achievement_type").notNull(), // daily_streak, completion, etc.
+  achievementValue: integer("achievement_value").notNull(), // e.g., 7 for 7-day streak
+  earnedAt: timestamp("earned_at").notNull().defaultNow(),
+});
+
+// Insert schemas for new tables
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
+  id: true,
+  createdAt: true,
+  isRead: true,
+});
+
+export const insertDictionarySchema = createInsertSchema(dictionary).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserAchievementSchema = createInsertSchema(userAchievements).omit({
+  id: true,
+  earnedAt: true,
+});
+
 export type StudySession = typeof studySessions.$inferSelect;
 export type SupportTicket = typeof supportTickets.$inferSelect;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+export type Dictionary = typeof dictionary.$inferSelect;
+export type InsertDictionary = z.infer<typeof insertDictionarySchema>;
+export type UserAchievement = typeof userAchievements.$inferSelect;
+export type InsertUserAchievement = z.infer<typeof insertUserAchievementSchema>;

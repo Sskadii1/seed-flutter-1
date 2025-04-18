@@ -1,4 +1,9 @@
-import { Course, Teacher, InsertCourse, InsertTeacher, PracticeExam, Exercise, StudyTip, UserProgress, StudySession, User, InsertUser } from "@shared/schema";
+import { 
+  Course, Teacher, InsertCourse, InsertTeacher, PracticeExam, 
+  Exercise, StudyTip, UserProgress, StudySession, User, 
+  InsertUser, SupportTicket, ChatMessage, InsertChatMessage,
+  Dictionary, InsertDictionary, UserAchievement, InsertUserAchievement
+} from "@shared/schema";
 
 export interface IStorage {
   // Courses
@@ -6,43 +11,87 @@ export interface IStorage {
   getCourse(id: number): Promise<Course | undefined>;
   searchCourses(query: string): Promise<Course[]>;
   createCourse(course: InsertCourse): Promise<Course>;
+  deleteCourse(id: number): Promise<void>;
+  updateCourse(id: number, course: Partial<InsertCourse>): Promise<Course>;
 
   // Teachers
   getTeachers(): Promise<Teacher[]>;
   getTeacher(id: number): Promise<Teacher | undefined>;
   createTeacher(teacher: InsertTeacher): Promise<Teacher>;
+  deleteTeacher(id: number): Promise<void>;
+  updateTeacher(id: number, teacher: Partial<InsertTeacher>): Promise<Teacher>;
 
   // Practice Exams
   getPracticeExams(): Promise<PracticeExam[]>;
   getPracticeExam(id: number): Promise<PracticeExam | undefined>;
   searchPracticeExams(level: string): Promise<PracticeExam[]>;
+  createPracticeExam(exam: any): Promise<PracticeExam>;
+  deletePracticeExam(id: number): Promise<void>;
 
   // Exercises
   getExercises(): Promise<Exercise[]>;
   getExercise(id: number): Promise<Exercise | undefined>;
   searchExercises(type: string, level: string): Promise<Exercise[]>;
+  createExercise(exercise: any): Promise<Exercise>;
+  deleteExercise(id: number): Promise<void>;
 
   // Study Tips
   getStudyTips(): Promise<StudyTip[]>;
   getStudyTip(id: number): Promise<StudyTip | undefined>;
   createStudyTip(tip: Omit<StudyTip, 'id' | 'likes' | 'comments' | 'createdAt'>): Promise<StudyTip>;
+  deleteStudyTip(id: number): Promise<void>;
   likeTip(id: number): Promise<StudyTip>;
   addComment(tipId: number, userId: number, content: string): Promise<StudyTip>;
+  deleteComment(tipId: number, commentId: number): Promise<StudyTip>;
   searchStudyTips(category: string): Promise<StudyTip[]>;
 
   // User Progress
   getUserProgress(userId: number): Promise<UserProgress[]>;
   saveUserProgress(progress: UserProgress): Promise<void>;
+  deleteUserProgress(id: number): Promise<void>;
 
   // Study Sessions
   getStudySessions(userId: number): Promise<StudySession[]>;
   startStudySession(userId: number, activityType: string, activityId: number): Promise<StudySession>;
   endStudySession(sessionId: number): Promise<void>;
 
-  // User Authentication
+  // User Authentication and Management
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, data: Partial<User>): Promise<User>;
+  deleteUser(id: number): Promise<void>;
+  setUserRole(id: number, role: string): Promise<User>;
+  upgradeToTeacher(id: number): Promise<User>;
+  upgradeToManager(id: number): Promise<User>;
+  upgradeToAdmin(id: number): Promise<User>;
+  activateSubscription(id: number, durationDays: number): Promise<User>;
+  deactivateSubscription(id: number): Promise<User>;
+  
+  // Support Tickets
+  getSupportTickets(): Promise<SupportTicket[]>;
+  getSupportTicket(id: number): Promise<SupportTicket | undefined>;
+  createSupportTicket(ticket: any): Promise<SupportTicket>;
+  updateSupportTicket(id: number, data: Partial<SupportTicket>): Promise<SupportTicket>;
+  deleteSupportTicket(id: number): Promise<void>;
+
+  // Chat System
+  getChatMessages(userId: number, otherUserId: number): Promise<ChatMessage[]>;
+  sendChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
+  markMessageAsRead(messageId: number): Promise<void>;
+  getUnreadMessageCount(userId: number): Promise<number>;
+  
+  // Dictionary
+  getDictionaryEntries(query?: string, level?: string, category?: string): Promise<Dictionary[]>;
+  getDictionaryEntry(id: number): Promise<Dictionary | undefined>;
+  createDictionaryEntry(entry: InsertDictionary): Promise<Dictionary>;
+  updateDictionaryEntry(id: number, data: Partial<InsertDictionary>): Promise<Dictionary>;
+  deleteDictionaryEntry(id: number): Promise<void>;
+  
+  // User Achievements
+  getUserAchievements(userId: number): Promise<UserAchievement[]>;
+  createUserAchievement(achievement: InsertUserAchievement): Promise<UserAchievement>;
+  checkAndAwardAchievements(userId: number): Promise<UserAchievement[]>;
 }
 
 export class MemStorage implements IStorage {
