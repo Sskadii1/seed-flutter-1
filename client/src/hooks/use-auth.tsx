@@ -4,12 +4,33 @@ import {
   useMutation,
 } from "@tanstack/react-query";
 import { InsertUser, User } from "@shared/schema";
-import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
+import { apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 type LoginData = {
   username: string;
   password: string;
+};
+
+type UserRole = 'guest' | 'user' | 'paid_user' | 'teacher' | 'manager' | 'admin';
+
+type UserPermissions = {
+  canAccessFreeContent: boolean;
+  canAccessPaidContent: boolean;
+  canTakePracticeExams: boolean;
+  canCreateThread: boolean;
+  canModerateThreads: boolean;
+  canDeleteContent: boolean;
+  canAddToDictionary: boolean;
+  canCreateCourse: boolean;
+  canManageUsers: boolean;
+  canApprovePayments: boolean;
+};
+
+type PermissionsData = {
+  role: UserRole;
+  isPaid: boolean;
+  permissions: UserPermissions;
 };
 
 type AuthContextType = {
@@ -19,6 +40,8 @@ type AuthContextType = {
   loginMutation: ReturnType<typeof useLoginMutation>;
   logoutMutation: ReturnType<typeof useLogoutMutation>;
   registerMutation: ReturnType<typeof useRegisterMutation>;
+  permissions: PermissionsData | null;
+  permissionsLoading: boolean;
 };
 
 function useLoginMutation() {
@@ -31,6 +54,7 @@ function useLoginMutation() {
     },
     onSuccess: (user: User) => {
       queryClient.setQueryData(["/api/user"], user);
+      queryClient.invalidateQueries({ queryKey: ["/api/user/permissions"] });
       toast({
         title: "Đăng nhập thành công",
         description: `Chào mừng ${user.name}!`,
@@ -56,6 +80,7 @@ function useRegisterMutation() {
     },
     onSuccess: (user: User) => {
       queryClient.setQueryData(["/api/user"], user);
+      queryClient.invalidateQueries({ queryKey: ["/api/user/permissions"] });
       toast({
         title: "Đăng ký thành công",
         description: `Chào mừng ${user.name}!`,
@@ -80,6 +105,7 @@ function useLogoutMutation() {
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);
+      queryClient.invalidateQueries({ queryKey: ["/api/user/permissions"] });
       toast({
         title: "Đăng xuất thành công",
       });
@@ -101,9 +127,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     data: user,
     error,
     isLoading,
-  } = useQuery<User>({
+  } = useQuery<User | null>({
     queryKey: ["/api/user"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/user");
+        if (res.status === 401) return null;
+        return res.json();
+      } catch (error) {
+        return null;
+      }
+    },
+  });
+  
+  const {
+    data: permissionsData,
+    isLoading: permissionsLoading,
+  } = useQuery<PermissionsData>({
+    queryKey: ["/api/user/permissions"],
+    queryFn: async () => {
+      const res = await fetch("/api/user/permissions");
+      return res.json();
+    },
   });
 
   const loginMutation = useLoginMutation();
@@ -119,6 +164,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginMutation,
         logoutMutation,
         registerMutation,
+        permissions: permissionsData ?? null,
+        permissionsLoading,
       }}
     >
       {children}
