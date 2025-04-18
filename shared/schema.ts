@@ -213,6 +213,24 @@ export const userAchievements = pgTable("user_achievements", {
   earnedAt: timestamp("earned_at").notNull().defaultNow(),
 });
 
+// Bảng lưu trữ các bài học
+export const lessons = pgTable("lessons", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  type: text("type").notNull(), // vocabulary, grammar, quiz, listening, video
+  level: text("level").notNull(), // beginner, intermediate, advanced
+  isFreemium: boolean("is_freemium").notNull().default(true), // true for free users, false for paid only
+  content: jsonb("content").notNull(), // Các nội dung của bài học (câu hỏi, từ vựng, ngữ pháp...)
+  mediaUrl: text("media_url"), // URL tới media (audio, video) nếu có
+  authorId: integer("author_id").notNull(), // ID của người tạo bài (teacher, manager, admin)
+  status: text("status").notNull().default("pending"), // pending, approved, rejected
+  reviewerId: integer("reviewer_id"), // ID của người duyệt
+  reviewNote: text("review_note"), // Ghi chú của người duyệt
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Insert schemas for new tables
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
   id: true,
@@ -230,6 +248,15 @@ export const insertUserAchievementSchema = createInsertSchema(userAchievements).
   earnedAt: true,
 });
 
+export const insertLessonSchema = createInsertSchema(lessons).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  status: true,
+  reviewerId: true,
+  reviewNote: true,
+});
+
 export type StudySession = typeof studySessions.$inferSelect;
 export type SupportTicket = typeof supportTickets.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
@@ -238,3 +265,5 @@ export type Dictionary = typeof dictionary.$inferSelect;
 export type InsertDictionary = z.infer<typeof insertDictionarySchema>;
 export type UserAchievement = typeof userAchievements.$inferSelect;
 export type InsertUserAchievement = z.infer<typeof insertUserAchievementSchema>;
+export type Lesson = typeof lessons.$inferSelect;
+export type InsertLesson = z.infer<typeof insertLessonSchema>;

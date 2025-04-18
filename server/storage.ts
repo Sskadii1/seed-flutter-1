@@ -72,6 +72,7 @@ export interface IStorage {
   upgradeToAdmin(id: number): Promise<User>;
   activateSubscription(id: number, durationDays: number): Promise<User>;
   deactivateSubscription(id: number): Promise<User>;
+  getAllUsers(): Promise<User[]>;
   
   // Support Tickets
   getSupportTickets(): Promise<SupportTicket[]>;
@@ -98,6 +99,18 @@ export interface IStorage {
   createUserAchievement(achievement: InsertUserAchievement): Promise<UserAchievement>;
   checkAndAwardAchievements(userId: number): Promise<UserAchievement[]>;
   
+  // Lessons
+  getLessons(): Promise<Lesson[]>;
+  getLesson(id: number): Promise<Lesson | undefined>;
+  searchLessons(type?: string, level?: string, isFreemium?: boolean): Promise<Lesson[]>;
+  createLesson(lesson: InsertLesson): Promise<Lesson>;
+  updateLesson(id: number, lesson: Partial<InsertLesson>): Promise<Lesson>;
+  deleteLesson(id: number): Promise<void>;
+  approveLesson(id: number, reviewerId: number, reviewNote?: string): Promise<Lesson>;
+  rejectLesson(id: number, reviewerId: number, reviewNote: string): Promise<Lesson>;
+  getLessonsByAuthor(authorId: number): Promise<Lesson[]>;
+  getPendingLessons(): Promise<Lesson[]>;
+  
   // Session Store
   sessionStore: session.Store;
 }
@@ -114,7 +127,8 @@ export class MemStorage implements IStorage {
   private supportTickets: Map<number, SupportTicket>;
   private chatMessages: Map<number, ChatMessage>;
   private dictionaryEntries: Map<number, Dictionary>;
-  private userAchievements: Map<number, UserAchievement>; 
+  private userAchievements: Map<number, UserAchievement>;
+  private lessons: Map<number, Lesson>;
   
   // Session store for authentication
   public sessionStore: session.Store;
@@ -131,6 +145,7 @@ export class MemStorage implements IStorage {
   private dictionaryId: number = 1;
   private achievementId: number = 1;
   private progressId: number = 1;
+  private lessonId: number = 1;
 
   constructor() {
     this.courses = new Map();
@@ -145,6 +160,7 @@ export class MemStorage implements IStorage {
     this.chatMessages = new Map();
     this.dictionaryEntries = new Map();
     this.userAchievements = new Map();
+    this.lessons = new Map();
     
     // Initialize session store for authentication
     this.sessionStore = new MemoryStore({
