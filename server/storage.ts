@@ -119,6 +119,7 @@ export class MemStorage implements IStorage {
   private messageId: number = 1;
   private dictionaryId: number = 1;
   private achievementId: number = 1;
+  private progressId: number = 1;
 
   constructor() {
     this.courses = new Map();
@@ -590,9 +591,312 @@ export class MemStorage implements IStorage {
       learningStreak: 0,
       totalStudyTime: 0,
       createdAt: new Date(),
+      imageUrl: user.imageUrl || null,
+      role: user.role || 'user',
+      isPaid: user.isPaid || false,
+      subscriptionExpiryDate: user.subscriptionExpiryDate || null
     };
     this.users.set(id, newUser);
     return newUser;
+  }
+  
+  async updateUser(id: number, data: Partial<User>): Promise<User> {
+    const user = this.users.get(id);
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    const updatedUser = {
+      ...user,
+      ...data
+    };
+    
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+  
+  async deleteUser(id: number): Promise<void> {
+    if (!this.users.has(id)) {
+      throw new Error('User not found');
+    }
+    this.users.delete(id);
+  }
+  
+  async setUserRole(id: number, role: string): Promise<User> {
+    const user = this.users.get(id);
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    const updatedUser = {
+      ...user,
+      role
+    };
+    
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+  
+  async upgradeToTeacher(id: number): Promise<User> {
+    return this.setUserRole(id, 'teacher');
+  }
+  
+  async upgradeToManager(id: number): Promise<User> {
+    return this.setUserRole(id, 'manager');
+  }
+  
+  async upgradeToAdmin(id: number): Promise<User> {
+    return this.setUserRole(id, 'admin');
+  }
+  
+  async activateSubscription(id: number, durationDays: number): Promise<User> {
+    const user = this.users.get(id);
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    // Calculate expiry date
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + durationDays);
+    
+    const updatedUser = {
+      ...user,
+      isPaid: true,
+      role: user.role === 'user' ? 'paid_user' : user.role, // Update role if it was a regular user
+      subscriptionExpiryDate: expiryDate
+    };
+    
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+  
+  async deactivateSubscription(id: number): Promise<User> {
+    const user = this.users.get(id);
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    const updatedUser = {
+      ...user,
+      isPaid: false,
+      role: user.role === 'paid_user' ? 'user' : user.role, // Downgrade role if it was a paid user
+      subscriptionExpiryDate: null
+    };
+    
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+  
+  // Support Tickets
+  async getSupportTickets(): Promise<SupportTicket[]> {
+    return Array.from(this.supportTickets.values());
+  }
+  
+  async getSupportTicket(id: number): Promise<SupportTicket | undefined> {
+    return this.supportTickets.get(id);
+  }
+  
+  async createSupportTicket(ticket: any): Promise<SupportTicket> {
+    const id = this.ticketId++;
+    const newTicket = {
+      ...ticket,
+      id,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.supportTickets.set(id, newTicket);
+    return newTicket;
+  }
+  
+  async updateSupportTicket(id: number, data: Partial<SupportTicket>): Promise<SupportTicket> {
+    const ticket = this.supportTickets.get(id);
+    if (!ticket) {
+      throw new Error('Support ticket not found');
+    }
+    
+    const updatedTicket = {
+      ...ticket,
+      ...data,
+      updatedAt: new Date()
+    };
+    
+    this.supportTickets.set(id, updatedTicket);
+    return updatedTicket;
+  }
+  
+  async deleteSupportTicket(id: number): Promise<void> {
+    if (!this.supportTickets.has(id)) {
+      throw new Error('Support ticket not found');
+    }
+    this.supportTickets.delete(id);
+  }
+  
+  // Chat System
+  async getChatMessages(userId: number, otherUserId: number): Promise<ChatMessage[]> {
+    return Array.from(this.chatMessages.values()).filter(
+      msg => 
+        (msg.senderId === userId && msg.receiverId === otherUserId) || 
+        (msg.senderId === otherUserId && msg.receiverId === userId)
+    ).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  }
+  
+  async sendChatMessage(message: InsertChatMessage): Promise<ChatMessage> {
+    const id = this.messageId++;
+    const newMessage = {
+      ...message,
+      id,
+      isRead: false,
+      createdAt: new Date(),
+      attachmentUrl: message.attachmentUrl || null
+    };
+    this.chatMessages.set(id, newMessage);
+    return newMessage;
+  }
+  
+  async markMessageAsRead(messageId: number): Promise<void> {
+    const message = this.chatMessages.get(messageId);
+    if (!message) {
+      throw new Error('Message not found');
+    }
+    
+    const updatedMessage = {
+      ...message,
+      isRead: true
+    };
+    
+    this.chatMessages.set(messageId, updatedMessage);
+  }
+  
+  async getUnreadMessageCount(userId: number): Promise<number> {
+    return Array.from(this.chatMessages.values()).filter(
+      msg => msg.receiverId === userId && !msg.isRead
+    ).length;
+  }
+  
+  // Dictionary
+  async getDictionaryEntries(query?: string, level?: string, category?: string): Promise<Dictionary[]> {
+    let entries = Array.from(this.dictionaryEntries.values());
+    
+    if (query) {
+      entries = entries.filter(entry => 
+        entry.korean.includes(query) || 
+        entry.vietnamese.includes(query) || 
+        (entry.english && entry.english.includes(query))
+      );
+    }
+    
+    if (level) {
+      entries = entries.filter(entry => entry.level === level);
+    }
+    
+    if (category) {
+      entries = entries.filter(entry => entry.category === category);
+    }
+    
+    return entries;
+  }
+  
+  async getDictionaryEntry(id: number): Promise<Dictionary | undefined> {
+    return this.dictionaryEntries.get(id);
+  }
+  
+  async createDictionaryEntry(entry: InsertDictionary): Promise<Dictionary> {
+    const id = this.dictionaryId++;
+    const newEntry = {
+      ...entry,
+      id,
+      createdAt: new Date(),
+      english: entry.english || null,
+      pronunciation: entry.pronunciation || null,
+      exampleSentence: entry.exampleSentence || null
+    };
+    this.dictionaryEntries.set(id, newEntry);
+    return newEntry;
+  }
+  
+  async updateDictionaryEntry(id: number, data: Partial<InsertDictionary>): Promise<Dictionary> {
+    const entry = this.dictionaryEntries.get(id);
+    if (!entry) {
+      throw new Error('Dictionary entry not found');
+    }
+    
+    const updatedEntry = {
+      ...entry,
+      ...data
+    };
+    
+    this.dictionaryEntries.set(id, updatedEntry);
+    return updatedEntry;
+  }
+  
+  async deleteDictionaryEntry(id: number): Promise<void> {
+    if (!this.dictionaryEntries.has(id)) {
+      throw new Error('Dictionary entry not found');
+    }
+    this.dictionaryEntries.delete(id);
+  }
+  
+  // User Achievements
+  async getUserAchievements(userId: number): Promise<UserAchievement[]> {
+    return Array.from(this.userAchievements.values()).filter(
+      achievement => achievement.userId === userId
+    );
+  }
+  
+  async createUserAchievement(achievement: InsertUserAchievement): Promise<UserAchievement> {
+    const id = this.achievementId++;
+    const newAchievement = {
+      ...achievement,
+      id,
+      earnedAt: new Date()
+    };
+    this.userAchievements.set(id, newAchievement);
+    return newAchievement;
+  }
+  
+  async checkAndAwardAchievements(userId: number): Promise<UserAchievement[]> {
+    const user = this.users.get(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    const awardedAchievements: UserAchievement[] = [];
+    const existingAchievements = await this.getUserAchievements(userId);
+    
+    // Check for streak achievements
+    if (user.learningStreak >= 7) {
+      const has7DayStreak = existingAchievements.some(
+        a => a.achievementType === 'daily_streak' && a.achievementValue === 7
+      );
+      
+      if (!has7DayStreak) {
+        const achievement = await this.createUserAchievement({
+          userId,
+          achievementType: 'daily_streak',
+          achievementValue: 7
+        });
+        awardedAchievements.push(achievement);
+      }
+    }
+    
+    if (user.learningStreak >= 30) {
+      const has30DayStreak = existingAchievements.some(
+        a => a.achievementType === 'daily_streak' && a.achievementValue === 30
+      );
+      
+      if (!has30DayStreak) {
+        const achievement = await this.createUserAchievement({
+          userId,
+          achievementType: 'daily_streak',
+          achievementValue: 30
+        });
+        awardedAchievements.push(achievement);
+      }
+    }
+    
+    // Add more achievement checks here as needed
+    
+    return awardedAchievements;
   }
 }
 

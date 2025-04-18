@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
+import { requireRole, hasPermission, requirePaidUser } from "./permissions";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up authentication routes and middleware
@@ -151,29 +152,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(tip);
   });
 
-  app.delete("/api/study-tips/:id", async (req, res) => {
-    if (!req.isAuthenticated() || !req.user.isAdmin) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
+  app.delete("/api/study-tips/:id", requireRole('manager'), async (req, res) => {
     const id = parseInt(req.params.id);
     await storage.deleteStudyTip(id);
     res.status(204).send();
   });
 
   // Admin routes for managing courses
-  app.post("/api/courses", async (req, res) => {
-    if (!req.isAuthenticated() || !req.user.isAdmin) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+  app.post("/api/courses", requireRole('teacher'), async (req, res) => {
     const course = await storage.createCourse(req.body);
     res.status(201).json(course);
   });
 
-  app.delete("/api/courses/:id", async (req, res) => {
-    if (!req.isAuthenticated() || !req.user.isAdmin) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+  app.delete("/api/courses/:id", requireRole('admin'), async (req, res) => {
     const id = parseInt(req.params.id);
     await storage.deleteCourse(id);
     res.status(204).send();
@@ -192,10 +183,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(201).json(ticket);
   });
 
-  app.get("/api/support-tickets", async (req, res) => {
-    if (!req.isAuthenticated() || !req.user.isAdmin) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+  app.get("/api/support-tickets", requireRole('manager'), async (req, res) => {
     const tickets = await storage.getSupportTickets();
     res.json(tickets);
   });
