@@ -2,7 +2,8 @@ import {
   Course, Teacher, InsertCourse, InsertTeacher, PracticeExam, 
   Exercise, StudyTip, UserProgress, StudySession, User, 
   InsertUser, SupportTicket, ChatMessage, InsertChatMessage,
-  Dictionary, InsertDictionary, UserAchievement, InsertUserAchievement
+  Dictionary, InsertDictionary, UserAchievement, InsertUserAchievement,
+  Lesson, InsertLesson
 } from "@shared/schema";
 
 import session from "express-session";
@@ -99,7 +100,7 @@ export interface IStorage {
   createUserAchievement(achievement: InsertUserAchievement): Promise<UserAchievement>;
   checkAndAwardAchievements(userId: number): Promise<UserAchievement[]>;
   
-  // Lessons
+  // Lessons - Quản lý bài học
   getLessons(): Promise<Lesson[]>;
   getLesson(id: number): Promise<Lesson | undefined>;
   searchLessons(type?: string, level?: string, isFreemium?: boolean): Promise<Lesson[]>;
@@ -718,6 +719,125 @@ export class MemStorage implements IStorage {
     
     this.users.set(id, updatedUser);
     return updatedUser;
+  }
+  
+  async getAllUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
+  }
+  
+  // Phương thức triển khai quản lý bài học
+  async getLessons(): Promise<Lesson[]> {
+    return Array.from(this.lessons.values());
+  }
+  
+  async getLesson(id: number): Promise<Lesson | undefined> {
+    return this.lessons.get(id);
+  }
+  
+  async searchLessons(type?: string, level?: string, isFreemium?: boolean): Promise<Lesson[]> {
+    let lessons = Array.from(this.lessons.values());
+    
+    if (type) {
+      lessons = lessons.filter(lesson => lesson.type === type);
+    }
+    
+    if (level) {
+      lessons = lessons.filter(lesson => lesson.level === level);
+    }
+    
+    if (isFreemium !== undefined) {
+      lessons = lessons.filter(lesson => lesson.isFreemium === isFreemium);
+    }
+    
+    return lessons;
+  }
+  
+  async createLesson(lesson: InsertLesson): Promise<Lesson> {
+    const id = this.lessonId++;
+    const now = new Date();
+    
+    const newLesson: Lesson = {
+      ...lesson,
+      id,
+      status: "pending",
+      reviewerId: null,
+      reviewNote: null,
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    this.lessons.set(id, newLesson);
+    return newLesson;
+  }
+  
+  async updateLesson(id: number, lessonData: Partial<InsertLesson>): Promise<Lesson> {
+    const lesson = this.lessons.get(id);
+    if (!lesson) {
+      throw new Error('Bài học không tồn tại');
+    }
+    
+    const updatedLesson: Lesson = {
+      ...lesson,
+      ...lessonData,
+      updatedAt: new Date()
+    };
+    
+    this.lessons.set(id, updatedLesson);
+    return updatedLesson;
+  }
+  
+  async deleteLesson(id: number): Promise<void> {
+    if (!this.lessons.has(id)) {
+      throw new Error('Bài học không tồn tại');
+    }
+    
+    this.lessons.delete(id);
+  }
+  
+  async approveLesson(id: number, reviewerId: number, reviewNote?: string): Promise<Lesson> {
+    const lesson = this.lessons.get(id);
+    if (!lesson) {
+      throw new Error('Bài học không tồn tại');
+    }
+    
+    const updatedLesson: Lesson = {
+      ...lesson,
+      status: "approved",
+      reviewerId,
+      reviewNote: reviewNote || null,
+      updatedAt: new Date()
+    };
+    
+    this.lessons.set(id, updatedLesson);
+    return updatedLesson;
+  }
+  
+  async rejectLesson(id: number, reviewerId: number, reviewNote: string): Promise<Lesson> {
+    const lesson = this.lessons.get(id);
+    if (!lesson) {
+      throw new Error('Bài học không tồn tại');
+    }
+    
+    const updatedLesson: Lesson = {
+      ...lesson,
+      status: "rejected",
+      reviewerId,
+      reviewNote,
+      updatedAt: new Date()
+    };
+    
+    this.lessons.set(id, updatedLesson);
+    return updatedLesson;
+  }
+  
+  async getLessonsByAuthor(authorId: number): Promise<Lesson[]> {
+    const lessons = Array.from(this.lessons.values());
+    return lessons.filter(lesson => lesson.authorId === authorId);
+  }
+  
+  async getPendingLessons(): Promise<Lesson[]> {
+    const lessons = Array.from(this.lessons.values());
+    return lessons.filter(lesson => lesson.status === "pending");
   }
   
   // Support Tickets

@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { WebSocketServer } from 'ws';
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { requireRole, hasPermission, requirePaidUser } from "./permissions";
@@ -319,7 +320,196 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const count = await storage.getUnreadMessageCount(req.user.id);
     res.json({ count });
   });
+  
+  // Lesson management routes - Dành cho giáo viên trở lên
+  app.get("/api/lessons", async (req, res) => {
+    const { type, level, isFreemium } = req.query;
+    const lessons = await storage.searchLessons(
+      typeof type === 'string' ? type : undefined,
+      typeof level === 'string' ? level : undefined,
+      isFreemium === 'true' ? true : (isFreemium === 'false' ? false : undefined)
+    );
+    res.json(lessons);
+  });
+  
+  app.get("/api/lessons/:id", async (req, res) => {
+    const id = parseInt(req.params.id);
+    const lesson = await storage.getLesson(id);
+    if (!lesson) {
+      return res.status(404).json({ message: "Bài học không tồn tại" });
+    }
+    res.json(lesson);
+  });
+  
+  app.post("/api/lessons", requireRole('teacher'), async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const lesson = await storage.createLesson({
+      ...req.body,
+      authorId: req.user.id,
+    });
+    res.status(201).json(lesson);
+  });
+  
+  app.put("/api/lessons/:id", requireRole('teacher'), async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const id = parseInt(req.params.id);
+    const lesson = await storage.getLesson(id);
+    
+    if (!lesson) {
+      return res.status(404).json({ message: "Bài học không tồn tại" });
+    }
+    
+    // Chỉ tác giả hoặc admin mới có thể chỉnh sửa
+    if (lesson.authorId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa bài học này" });
+    }
+    
+    const updatedLesson = await storage.updateLesson(id, req.body);
+    res.json(updatedLesson);
+  });
+  
+  app.delete("/api/lessons/:id", requireRole('teacher'), async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const id = parseInt(req.params.id);
+    const lesson = await storage.getLesson(id);
+    
+    if (!lesson) {
+      return res.status(404).json({ message: "Bài học không tồn tại" });
+    }
+    
+    // Chỉ tác giả hoặc admin mới có thể xóa
+    if (lesson.authorId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Bạn không có quyền xóa bài học này" });
+    }
+    
+    await storage.deleteLesson(id);
+    res.status(204).send();
+  });
+  
+  // Route cho quản lý duyệt bài học (manager/admin)
+  app.get("/api/lessons/pending", requireRole('manager'), async (req, res) => {
+    const lessons = await storage.getPendingLessons();
+    res.json(lessons);
+  });
+  
+  app.post("/api/lessons/:id/approve", requireRole('manager'), async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const id = parseInt(req.params.id);
+    const { reviewNote } = req.body;
+    
+    const updatedLesson = await storage.approveLesson(id, req.user.id, reviewNote);
+    res.json(updatedLesson);
+  });
+  
+  app.post("/api/lessons/:id/reject", requireRole('manager'), async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const id = parseInt(req.params.id);
+    const { reviewNote } = req.body;
+    
+    if (!reviewNote) {
+      return res.status(400).json({ message: "Vui lòng cung cấp lý do từ chối" });
+    }
+    
+    const updatedLesson = await storage.rejectLesson(id, req.user.id, reviewNote);
+    res.json(updatedLesson);
+  });
+  
+  // Lấy danh sách bài học theo tác giả
+  app.get("/api/users/:userId/lessons", requireRole('teacher'), async (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const lessons = await storage.getLessonsByAuthor(userId);
+    res.json(lessons);
+  });
+  
+  // Admin route to get all users
+  app.get("/api/admin/users", requireRole('admin'), async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ message: "Không thể lấy danh sách người dùng" });
+    }
+  });
 
   const httpServer = createServer(app);
+  
+  // Thiết lập WebSocket server cho chat học chung
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  
+  // Lưu trữ các kết nối
+  const connections = new Map();
+  
+  wss.on('connection', (ws, req) => {
+    // Tạo ID cho kết nối
+    const connectionId = Date.now();
+    connections.set(connectionId, { ws, userId: null });
+    
+    ws.on('message', (message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        
+        // Xử lý các loại tin nhắn
+        if (data.type === 'auth') {
+          // Xác thực và lưu userId
+          connections.set(connectionId, { ws, userId: data.userId });
+          
+          // Gửi xác nhận kết nối
+          ws.send(JSON.stringify({ 
+            type: 'auth_success', 
+            message: 'Kết nối thành công' 
+          }));
+        } 
+        else if (data.type === 'chat') {
+          // Lấy thông tin người dùng hiện tại
+          const conn = connections.get(connectionId);
+          
+          if (!conn || !conn.userId) {
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              message: 'Bạn chưa xác thực' 
+            }));
+            return;
+          }
+          
+          // Lưu tin nhắn vào storage (nếu cần)
+          
+          // Gửi tin nhắn tới tất cả người dùng đã xác thực
+          connections.forEach((connection) => {
+            if (connection.userId && connection.ws.readyState === WebSocket.OPEN) {
+              connection.ws.send(JSON.stringify({
+                type: 'chat',
+                userId: conn.userId,
+                message: data.message,
+                timestamp: new Date()
+              }));
+            }
+          });
+        }
+      } catch (error) {
+        console.error('WebSocket error:', error);
+      }
+    });
+    
+    ws.on('close', () => {
+      // Xóa kết nối khi đóng
+      connections.delete(connectionId);
+    });
+  });
+  
   return httpServer;
 }
