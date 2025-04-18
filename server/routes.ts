@@ -218,6 +218,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
     await storage.endStudySession(sessionId);
     res.json({ message: "Study session ended" });
   });
+  
+  // Dictionary routes
+  app.get("/api/dictionary", async (req, res) => {
+    const { query, level, category } = req.query;
+    const entries = await storage.getDictionaryEntries(
+      typeof query === 'string' ? query : undefined,
+      typeof level === 'string' ? level : undefined,
+      typeof category === 'string' ? category : undefined
+    );
+    res.json(entries);
+  });
+  
+  app.get("/api/dictionary/:id", async (req, res) => {
+    const id = parseInt(req.params.id);
+    const entry = await storage.getDictionaryEntry(id);
+    if (!entry) {
+      return res.status(404).json({ message: "Dictionary entry not found" });
+    }
+    res.json(entry);
+  });
+  
+  app.post("/api/dictionary", requireRole('teacher'), async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const entry = await storage.createDictionaryEntry({
+      ...req.body,
+      addedBy: req.user.id
+    });
+    res.status(201).json(entry);
+  });
+  
+  app.put("/api/dictionary/:id", requireRole('teacher'), async (req, res) => {
+    const id = parseInt(req.params.id);
+    const entry = await storage.updateDictionaryEntry(id, req.body);
+    res.json(entry);
+  });
+  
+  app.delete("/api/dictionary/:id", requireRole('admin'), async (req, res) => {
+    const id = parseInt(req.params.id);
+    await storage.deleteDictionaryEntry(id);
+    res.status(204).send();
+  });
+  
+  // User achievement routes
+  app.get("/api/users/:userId/achievements", async (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const achievements = await storage.getUserAchievements(userId);
+    res.json(achievements);
+  });
+  
+  app.post("/api/users/:userId/check-achievements", async (req, res) => {
+    const userId = parseInt(req.params.userId);
+    const awardedAchievements = await storage.checkAndAwardAchievements(userId);
+    res.json(awardedAchievements);
+  });
+  
+  // Chat routes
+  app.get("/api/chat/:userId", requireRole('user'), async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const userId = parseInt(req.params.userId);
+    const otherUserId = req.user.id;
+    
+    const messages = await storage.getChatMessages(otherUserId, userId);
+    res.json(messages);
+  });
+  
+  app.post("/api/chat/:userId", requireRole('user'), async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const receiverId = parseInt(req.params.userId);
+    const senderId = req.user.id;
+    
+    const message = await storage.sendChatMessage({
+      ...req.body,
+      senderId,
+      receiverId
+    });
+    res.status(201).json(message);
+  });
+  
+  app.post("/api/chat/messages/:messageId/read", requireRole('user'), async (req, res) => {
+    const messageId = parseInt(req.params.messageId);
+    await storage.markMessageAsRead(messageId);
+    res.status(204).send();
+  });
+  
+  app.get("/api/chat/unread-count", requireRole('user'), async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const count = await storage.getUnreadMessageCount(req.user.id);
+    res.json({ count });
+  });
 
   const httpServer = createServer(app);
   return httpServer;

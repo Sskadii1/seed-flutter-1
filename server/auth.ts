@@ -31,11 +31,15 @@ async function comparePasswords(supplied: string, stored: string) {
 
 export function setupAuth(app: Express) {
   const sessionSettings: session.SessionOptions = {
-    secret: "your-secret-key", // We should use env variable in production
+    secret: process.env.SESSION_SECRET || "seed-topik-session-secret-9821hn298h92", // Sử dụng biến môi trường hoặc khóa mặc định an toàn hơn
     resave: false,
     saveUninitialized: false,
+    store: storage.sessionStore,
     cookie: {
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax'
     }
   };
 

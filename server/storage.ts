@@ -5,6 +5,11 @@ import {
   Dictionary, InsertDictionary, UserAchievement, InsertUserAchievement
 } from "@shared/schema";
 
+import session from "express-session";
+import createMemoryStore from "memorystore";
+
+const MemoryStore = createMemoryStore(session);
+
 export interface IStorage {
   // Courses
   getCourses(): Promise<Course[]>;
@@ -92,6 +97,9 @@ export interface IStorage {
   getUserAchievements(userId: number): Promise<UserAchievement[]>;
   createUserAchievement(achievement: InsertUserAchievement): Promise<UserAchievement>;
   checkAndAwardAchievements(userId: number): Promise<UserAchievement[]>;
+  
+  // Session Store
+  sessionStore: session.Store;
 }
 
 export class MemStorage implements IStorage {
@@ -107,6 +115,9 @@ export class MemStorage implements IStorage {
   private chatMessages: Map<number, ChatMessage>;
   private dictionaryEntries: Map<number, Dictionary>;
   private userAchievements: Map<number, UserAchievement>; 
+  
+  // Session store for authentication
+  public sessionStore: session.Store;
 
   private courseId: number = 1;
   private teacherId: number = 1;
@@ -134,6 +145,12 @@ export class MemStorage implements IStorage {
     this.chatMessages = new Map();
     this.dictionaryEntries = new Map();
     this.userAchievements = new Map();
+    
+    // Initialize session store for authentication
+    this.sessionStore = new MemoryStore({
+      checkPeriod: 86400000 // Prune expired entries every 24h
+    });
+    
     this.initializeData();
   }
 
