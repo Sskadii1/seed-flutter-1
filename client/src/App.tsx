@@ -17,6 +17,7 @@ import ExamPrep from "@/pages/exam-prep";
 import Experience from "@/pages/experience";
 import Profile from "@/pages/profile";
 import AdminUsers from "@/pages/admin-users";
+import LessonManager from "@/pages/lesson-manager";
 
 function Router() {
   // Hàm tạo component mà chỉ trả về JSX Element
@@ -56,6 +57,13 @@ function Router() {
         path="/admin/users"
         component={createComponent(AdminUsers)}
         requireRole="admin"
+      />
+      
+      {/* Trang quản lý bài học - dành cho Teacher trở lên */}
+      <ProtectedRoute
+        path="/lessons/manage"
+        component={createComponent(LessonManager)}
+        requireRole="teacher"
       />
       
       <Route component={NotFound} />

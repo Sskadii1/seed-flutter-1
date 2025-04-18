@@ -124,12 +124,20 @@ export function Navbar() {
           
           {/* Liên kết dành cho teacher tạo khoá học */}
           {isTeacherOrAbove && (
-            <NavLink 
-              href="/teacher/courses" 
-              className="text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors whitespace-nowrap"
-            >
-              Quản lý khoá học
-            </NavLink>
+            <>
+              <NavLink 
+                href="/teacher/courses" 
+                className="text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors whitespace-nowrap"
+              >
+                Quản lý khoá học
+              </NavLink>
+              <NavLink 
+                href="/lessons/manage" 
+                className="text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors whitespace-nowrap"
+              >
+                Quản lý bài học
+              </NavLink>
+            </>
           )}
         </div>
       </div>
