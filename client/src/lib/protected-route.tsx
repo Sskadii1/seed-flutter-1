@@ -21,40 +21,35 @@ export function ProtectedRoute({
 }: ProtectedRouteProps) {
   const { user, isLoading, permissions, permissionsLoading } = useAuth();
 
-  if (isLoading || permissionsLoading) {
-    return (
-      <Route path={path}>
+  // Render function xử lý tất cả các trường hợp
+  const renderFn = () => {
+    if (isLoading || permissionsLoading) {
+      return (
         <div className="flex items-center justify-center min-h-screen">
           <Loader2 className="h-8 w-8 animate-spin text-border" />
         </div>
-      </Route>
-    );
-  }
+      );
+    }
 
-  // Nếu chưa đăng nhập, chuyển đến trang đăng nhập
-  if (!user) {
-    return (
-      <Route path={path}>
-        <Redirect to="/auth" />
-      </Route>
-    );
-  }
-  
-  // Kiểm tra quyền truy cập dựa trên role
-  if (permissions && permissions.role) {
-    const roleHierarchy = {
-      'guest': 0,
-      'user': 1,
-      'paid_user': 2,
-      'teacher': 3,
-      'manager': 4,
-      'admin': 5
-    };
+    // Nếu chưa đăng nhập, chuyển đến trang đăng nhập
+    if (!user) {
+      return <Redirect to="/auth" />;
+    }
     
-    // Kiểm tra nếu role hiện tại không đủ
-    if (roleHierarchy[permissions.role] < roleHierarchy[requireRole]) {
-      return (
-        <Route path={path}>
+    // Kiểm tra quyền truy cập dựa trên role
+    if (permissions && permissions.role) {
+      const roleHierarchy = {
+        'guest': 0,
+        'user': 1,
+        'paid_user': 2,
+        'teacher': 3,
+        'manager': 4,
+        'admin': 5
+      };
+      
+      // Kiểm tra nếu role hiện tại không đủ
+      if (roleHierarchy[permissions.role] < roleHierarchy[requireRole]) {
+        return (
           <div className="container max-w-3xl mx-auto p-6">
             <Alert variant="destructive" className="my-8">
               <AlertCircle className="h-4 w-4" />
@@ -64,14 +59,12 @@ export function ProtectedRoute({
               </AlertDescription>
             </Alert>
           </div>
-        </Route>
-      );
-    }
-    
-    // Kiểm tra nếu cần subscription nhưng chưa có
-    if (requirePaid && !permissions.isPaid) {
-      return (
-        <Route path={path}>
+        );
+      }
+      
+      // Kiểm tra nếu cần subscription nhưng chưa có
+      if (requirePaid && !permissions.isPaid) {
+        return (
           <div className="container max-w-3xl mx-auto p-6">
             <Alert variant="destructive" className="my-8">
               <AlertCircle className="h-4 w-4" />
@@ -81,10 +74,14 @@ export function ProtectedRoute({
               </AlertDescription>
             </Alert>
           </div>
-        </Route>
-      );
+        );
+      }
     }
-  }
 
-  return <Route path={path} component={Component} />;
+    // Nếu có đủ quyền, render component
+    return <Component />;
+  };
+
+  // Sau đó đưa render function vào Route
+  return <Route path={path}>{renderFn()}</Route>;
 }

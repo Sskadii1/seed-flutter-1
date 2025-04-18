@@ -20,11 +20,6 @@ import AdminUsers from "@/pages/admin-users";
 import LessonManager from "@/pages/lesson-manager";
 
 function Router() {
-  // Hàm tạo component mà chỉ trả về JSX Element
-  const createComponent = (Component: React.ComponentType<any>) => {
-    return () => <Component />;
-  };
-  
   return (
     <Switch>
       {/* Trang không cần đăng nhập */}
@@ -36,18 +31,18 @@ function Router() {
       <Route path="/experience" component={Experience} />
       
       {/* Trang cơ bản cần đăng nhập */}
-      <ProtectedRoute path="/profile" component={createComponent(Profile)} requireRole="user" />
-      <ProtectedRoute path="/" component={createComponent(Home)} requireRole="user" />
-      <ProtectedRoute path="/courses" component={createComponent(Courses)} requireRole="user" />
-      <ProtectedRoute path="/courses/:id" component={createComponent(Course)} requireRole="user" />
+      <ProtectedRoute path="/profile" component={Profile} requireRole="user" />
+      <ProtectedRoute path="/" component={Home} requireRole="user" />
+      <ProtectedRoute path="/courses" component={Courses} requireRole="user" />
+      <ProtectedRoute path="/courses/:id" component={Course} requireRole="user" />
       
       {/* Trang học chung cần role user hoặc cao hơn */}
-      <ProtectedRoute path="/study-together" component={createComponent(StudyTogether)} requireRole="user" />
+      <ProtectedRoute path="/study-together" component={StudyTogether} requireRole="user" />
       
       {/* Trang luyện thi TOPIK - chỉ cho paid user và cao hơn */}
       <ProtectedRoute 
         path="/exam-prep" 
-        component={createComponent(ExamPrep)} 
+        component={ExamPrep} 
         requireRole="paid_user" 
         requirePaid={true} 
       />
@@ -55,14 +50,14 @@ function Router() {
       {/* Trang quản lý người dùng - chỉ dành cho admin */}
       <ProtectedRoute
         path="/admin/users"
-        component={createComponent(AdminUsers)}
+        component={AdminUsers}
         requireRole="admin"
       />
       
       {/* Trang quản lý bài học - dành cho Teacher trở lên */}
       <ProtectedRoute
         path="/lessons/manage"
-        component={createComponent(LessonManager)}
+        component={LessonManager}
         requireRole="teacher"
       />
       
