@@ -103,6 +103,10 @@ export class MemStorage implements IStorage {
   private userProgress: Map<number, UserProgress[]>;
   private studySessions: Map<number, StudySession>;
   private users: Map<number, User>;
+  private supportTickets: Map<number, SupportTicket>;
+  private chatMessages: Map<number, ChatMessage>;
+  private dictionaryEntries: Map<number, Dictionary>;
+  private userAchievements: Map<number, UserAchievement>; 
 
   private courseId: number = 1;
   private teacherId: number = 1;
@@ -111,6 +115,10 @@ export class MemStorage implements IStorage {
   private tipId: number = 1;
   private sessionId: number = 1;
   private userId: number = 1;
+  private ticketId: number = 1;
+  private messageId: number = 1;
+  private dictionaryId: number = 1;
+  private achievementId: number = 1;
 
   constructor() {
     this.courses = new Map();
@@ -121,6 +129,10 @@ export class MemStorage implements IStorage {
     this.userProgress = new Map();
     this.studySessions = new Map();
     this.users = new Map();
+    this.supportTickets = new Map();
+    this.chatMessages = new Map();
+    this.dictionaryEntries = new Map();
+    this.userAchievements = new Map();
     this.initializeData();
   }
 
@@ -280,6 +292,29 @@ export class MemStorage implements IStorage {
     this.courses.set(id, newCourse);
     return newCourse;
   }
+  
+  async deleteCourse(id: number): Promise<void> {
+    if (!this.courses.has(id)) {
+      throw new Error('Course not found');
+    }
+    this.courses.delete(id);
+  }
+  
+  async updateCourse(id: number, course: Partial<InsertCourse>): Promise<Course> {
+    const existingCourse = this.courses.get(id);
+    if (!existingCourse) {
+      throw new Error('Course not found');
+    }
+    
+    const updatedCourse = {
+      ...existingCourse,
+      ...course,
+      updatedAt: new Date()
+    };
+    
+    this.courses.set(id, updatedCourse);
+    return updatedCourse;
+  }
 
   async getTeachers(): Promise<Teacher[]> {
     return Array.from(this.teachers.values());
@@ -301,6 +336,28 @@ export class MemStorage implements IStorage {
     this.teachers.set(id, newTeacher);
     return newTeacher;
   }
+  
+  async deleteTeacher(id: number): Promise<void> {
+    if (!this.teachers.has(id)) {
+      throw new Error('Teacher not found');
+    }
+    this.teachers.delete(id);
+  }
+  
+  async updateTeacher(id: number, teacher: Partial<InsertTeacher>): Promise<Teacher> {
+    const existingTeacher = this.teachers.get(id);
+    if (!existingTeacher) {
+      throw new Error('Teacher not found');
+    }
+    
+    const updatedTeacher = {
+      ...existingTeacher,
+      ...teacher
+    };
+    
+    this.teachers.set(id, updatedTeacher);
+    return updatedTeacher;
+  }
 
 
   async getPracticeExams(): Promise<PracticeExam[]> {
@@ -315,6 +372,24 @@ export class MemStorage implements IStorage {
     const exams = Array.from(this.practiceExams.values());
     return exams.filter(exam => exam.level === level);
   }
+  
+  async createPracticeExam(exam: any): Promise<PracticeExam> {
+    const id = this.examId++;
+    const newExam = {
+      ...exam,
+      id,
+      createdAt: new Date()
+    };
+    this.practiceExams.set(id, newExam);
+    return newExam;
+  }
+  
+  async deletePracticeExam(id: number): Promise<void> {
+    if (!this.practiceExams.has(id)) {
+      throw new Error('Practice exam not found');
+    }
+    this.practiceExams.delete(id);
+  }
 
   async getExercises(): Promise<Exercise[]> {
     return Array.from(this.exercises.values());
@@ -327,6 +402,24 @@ export class MemStorage implements IStorage {
   async searchExercises(type: string, level: string): Promise<Exercise[]> {
     const exercises = Array.from(this.exercises.values());
     return exercises.filter(ex => ex.type === type && ex.level === level);
+  }
+  
+  async createExercise(exercise: any): Promise<Exercise> {
+    const id = this.exerciseId++;
+    const newExercise = {
+      ...exercise,
+      id,
+      createdAt: new Date()
+    };
+    this.exercises.set(id, newExercise);
+    return newExercise;
+  }
+  
+  async deleteExercise(id: number): Promise<void> {
+    if (!this.exercises.has(id)) {
+      throw new Error('Exercise not found');
+    }
+    this.exercises.delete(id);
   }
 
   async getStudyTips(): Promise<StudyTip[]> {
@@ -391,6 +484,36 @@ export class MemStorage implements IStorage {
     const tips = Array.from(this.studyTips.values());
     return tips.filter(tip => tip.category === category);
   }
+  
+  async deleteStudyTip(id: number): Promise<void> {
+    if (!this.studyTips.has(id)) {
+      throw new Error('Study tip not found');
+    }
+    this.studyTips.delete(id);
+  }
+  
+  async deleteComment(tipId: number, commentId: number): Promise<StudyTip> {
+    const tip = this.studyTips.get(tipId);
+    if (!tip) {
+      throw new Error('Study tip not found');
+    }
+    
+    const commentIndex = tip.comments.findIndex(c => c.id === commentId);
+    if (commentIndex === -1) {
+      throw new Error('Comment not found');
+    }
+    
+    const updatedComments = [...tip.comments];
+    updatedComments.splice(commentIndex, 1);
+    
+    const updatedTip = {
+      ...tip,
+      comments: updatedComments
+    };
+    
+    this.studyTips.set(tipId, updatedTip);
+    return updatedTip;
+  }
 
   async getUserProgress(userId: number): Promise<UserProgress[]> {
     return this.userProgress.get(userId) || [];
@@ -400,6 +523,19 @@ export class MemStorage implements IStorage {
     const userProgresses = this.userProgress.get(progress.userId) || [];
     userProgresses.push(progress);
     this.userProgress.set(progress.userId, userProgresses);
+  }
+  
+  async deleteUserProgress(id: number): Promise<void> {
+    // Since user progress is stored in a Map by user ID, we need to find the progress in each user's array
+    for (const [userId, progresses] of this.userProgress.entries()) {
+      const index = progresses.findIndex(p => p.id === id);
+      if (index !== -1) {
+        progresses.splice(index, 1);
+        this.userProgress.set(userId, progresses);
+        return;
+      }
+    }
+    throw new Error('User progress not found');
   }
 
   async getStudySessions(userId: number): Promise<StudySession[]> {
