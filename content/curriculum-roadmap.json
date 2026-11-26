@@ -1,0 +1,185 @@
+{
+  "courseId": "se-kr-beg-1",
+  "title": "SEED Tiếng Hàn Sơ Cấp 1",
+  "targetLevel": "TOPIK I (Cấp 1)",
+  "targetLearner": "Người Việt mới bắt đầu (L1 Vietnamese -> L2 Korean)",
+  "designPrinciples": [
+    "FSRS-4.5 spaced retrieval before new content",
+    "4-stage vocabulary mastery (Recognition -> Receptive Recall -> Assembly -> IME Productive Recall)",
+    "Explicit grammar rules + Vietnamese L1 contrast warnings",
+    "Interleaved practice on confusable particles and phonemes",
+    "2-step prompt-first corrective feedback",
+    "HVPT multi-speaker & multi-rate phonetic drills",
+    "Hán-Việt cognate mapping with false-friend alerts",
+    "Graded micro-stories (>=95% known vocabulary) + shadowing"
+  ],
+  "totals": {
+    "unitsCount": 13,
+    "targetLessons": 48,
+    "targetVocab": 450,
+    "targetGrammarPoints": 26
+  },
+  "units": [
+    {
+      "unitNumber": 0,
+      "id": "unit-0",
+      "title": "Hangul & Tai Nghe Tiếng Hàn",
+      "communicativeGoal": "Đọc thông viết thạo bảng chữ Hangul, phân biệt 3 bậc phụ âm tắc và patchim ㄴ/ㄹ, gõ bàn phím 2-beolsik.",
+      "lessonsCount": 6,
+      "vocabTarget": 30,
+      "grammarPoints": [],
+      "hvptContrasts": [
+        "3-way stops: ㄱ/ㄲ/ㅋ, ㄷ/ㄸ/ㅌ, ㅂ/ㅃ/ㅍ, ㅈ/ㅉ/ㅊ",
+        "Vowels: ㅗ/ㅓ, ㅡ/ㅜ, ㅐ/ㅔ",
+        "Batchim: ㄴ vs ㄹ",
+        "Liaison (연음)"
+      ],
+      "interleavedContrasts": ["달/딸/탈", "불/뿔/풀", "안/알", "오/어"],
+      "hanjaFamilies": []
+    },
+    {
+      "unitNumber": 1,
+      "id": "unit-1",
+      "title": "Chào hỏi & Giới thiệu bản thân",
+      "communicativeGoal": "Chào hỏi tự nhiên, giới thiệu tên, quốc tịch, nghề nghiệp và hỏi xác nhận đơn giản.",
+      "lessonsCount": 4,
+      "vocabTarget": 28,
+      "grammarPoints": ["N은/는", "N이에요/예요", "N이/가 아니에요 (preview) & Câu hỏi ngữ điệu"],
+      "hvptContrasts": ["한국어 [한구거] liaison", "학생 / 선생님 batchim ㅇ/ㅁ"],
+      "interleavedContrasts": ["은 vs 는", "이에요 vs 예요", "은/는 + 이에요/예요 trong cùng câu"],
+      "hanjaFamilies": ["학 (學 - Học)", "국 (國 - Quốc)", "원 (員 - Viên)", "안녕 (安寧 - An ninh)"]
+    },
+    {
+      "unitNumber": 2,
+      "id": "unit-2",
+      "title": "Đồ vật quanh tôi",
+      "communicativeGoal": "Chỉ trỏ đồ vật gần/xa, hỏi tên đồ vật bằng tiếng Hàn và phủ định danh từ.",
+      "lessonsCount": 3,
+      "vocabTarget": 32,
+      "grammarPoints": ["이/그/저 + N", "뭐예요?", "N이/가 아니에요"],
+      "hvptContrasts": ["이/의", "책/댁/택"],
+      "interleavedContrasts": ["은/는 vs 이/가", "이에요/예요 vs 이/가 아니에요"],
+      "hanjaFamilies": ["책 (冊 - Sách)", "교 (校 - Hiệu)", "실 (室 - Thất)"]
+    },
+    {
+      "unitNumber": 3,
+      "id": "unit-3",
+      "title": "Có, không có & Vị trí",
+      "communicativeGoal": "Nói có hoặc không có vật/người và mô tả vị trí tĩnh.",
+      "lessonsCount": 3,
+      "vocabTarget": 34,
+      "grammarPoints": ["N이/가 있어요/없어요", "N에 있어요", "위/아래/앞/뒤/옆"],
+      "hvptContrasts": ["있어요 [이써요] liaison + tense", "앞 [압] batchim neutralization"],
+      "interleavedContrasts": ["은/는 vs 이/가", "에 (tồn tại) vs không dùng trợ từ"],
+      "hanjaFamilies": ["장 (場 - Trường)", "방 (房 - Phòng)", "관 (館 - Quán)"]
+    },
+    {
+      "unitNumber": 4,
+      "id": "unit-4",
+      "title": "Số đếm & Mua sắm",
+      "communicativeGoal": "Đếm tiền, hỏi giá, gọi số lượng đồ ăn/uống với lượng từ đúng.",
+      "lessonsCount": 4,
+      "vocabTarget": 40,
+      "grammarPoints": ["Số Hán-Hàn (일, 이, 삼...)", "Số thuần Hàn (하나, 둘, 셋...)", "얼마예요? / N 주세요", "Lượng từ 개/명/병/잔"],
+      "hvptContrasts": ["삼/쌈", "다섯/여섯 batchim ㅅ -> [ㄷ]"],
+      "interleavedContrasts": ["Hệ số Hán-Hàn vs Thuần Hàn", "은/는 vs 이/가 vs 주세요"],
+      "hanjaFamilies": ["원 (圓/원)", "만 (萬 - Vạn)", "백 (百 - Bách)"]
+    },
+    {
+      "unitNumber": 5,
+      "id": "unit-5",
+      "title": "Thời gian & Lịch hẹn",
+      "communicativeGoal": "Nói giờ phút, ngày tháng thứ trong tuần và đặt lịch hẹn.",
+      "lessonsCount": 4,
+      "vocabTarget": 38,
+      "grammarPoints": ["몇 시 몇 분 (Thuần Hàn + Hán-Hàn)", "Ngày/tháng/thứ", "N에 (thời gian)"],
+      "hvptContrasts": ["시 vs 씨", "육월 [유월] bất quy tắc"],
+      "interleavedContrasts": ["N에 (thời gian) vs N에 (địa điểm) vs không dùng 에 với 오늘/내일"],
+      "hanjaFamilies": ["시 (時 - Thì/Giờ)", "분 (分 - Phân/Phút)", "일 (日 - Nhật)", "월 (月 - Nguyệt)"]
+    },
+    {
+      "unitNumber": 6,
+      "id": "unit-6",
+      "title": "Sinh hoạt hằng ngày",
+      "communicativeGoal": "Kể hoạt động mỗi ngày, phân biệt nơi chốn hành động và đích đến.",
+      "lessonsCount": 4,
+      "vocabTarget": 42,
+      "grammarPoints": ["Đuôi -아요/어요", "Tân ngữ N을/를", "N에 가요/와요", "N에서 V"],
+      "hvptContrasts": ["가요/까요", "공부해요/운동해요"],
+      "interleavedContrasts": ["에 vs 에서 (lỗi trọng tâm người Việt)", "Bắt buộc dùng 을/를 vs bỏ sót"],
+      "hanjaFamilies": ["공부 (工夫 - Công phu)", "운동 (運動 - Vận động)", "회사 (會社 - Hội xã)"]
+    },
+    {
+      "unitNumber": 7,
+      "id": "unit-7",
+      "title": "Cuối tuần của tôi",
+      "communicativeGoal": "Kể lại việc đã làm trong quá khứ và nói điều không làm / không thể làm.",
+      "lessonsCount": 4,
+      "vocabTarget": 38,
+      "grammarPoints": ["Quá khứ -았/었어요", "Phủ định 안 V vs 못 V", "Liên từ 그리고 / 그래서"],
+      "hvptContrasts": ["갔어요 [가써요] vs 갔어요?", "안 vs 알"],
+      "interleavedContrasts": ["-아요/어요 vs -았/었어요", "안 vs 못", "에 vs 에서"],
+      "hanjaFamilies": ["주말 (週末 - Chu mạt)", "영화 (映畫 - Ánh họa)", "음악 (音樂 - Âm nhạc)"]
+    },
+    {
+      "unitNumber": 8,
+      "id": "unit-8",
+      "title": "Ẩm thực & Gọi món",
+      "communicativeGoal": "Gọi món tại quán Hàn Quốc, diễn tả mong muốn và vị món ăn.",
+      "lessonsCount": 3,
+      "vocabTarget": 36,
+      "grammarPoints": ["-고 싶어요", "Mệnh lệnh/đề nghị lịch sự -(으)세요", "Tính từ miêu tả vị"],
+      "hvptContrasts": ["비빔밥 / 김치찌개", "맵다 (bất quy tắc ㅂ)"],
+      "interleavedContrasts": ["-고 싶어요 vs -고 싶어해요 (ngôi 1 vs ngôi 3)", "을/를 vs 이/가 với 좋다"],
+      "hanjaFamilies": ["식당 (食堂 - Thực đường)", "음식 (飲食 - Ẩm thực)"]
+    },
+    {
+      "unitNumber": 9,
+      "id": "unit-9",
+      "title": "Đường đi & Giao thông",
+      "communicativeGoal": "Hỏi đường, mô tả phương tiện di chuyển và thời gian mất bao lâu.",
+      "lessonsCount": 3,
+      "vocabTarget": 34,
+      "grammarPoints": ["Phương tiện N(으)로", "Chỉ đường -(으)로 가세요", "에서 ~ 까지"],
+      "hvptContrasts": ["버스/지하철", "으/우 trong -(으)로"],
+      "interleavedContrasts": ["으로 vs 로 (lỗi patchim ㄹ như 지하철로)", "에 vs 에서 vs (으)로"],
+      "hanjaFamilies": ["교통 (交通 - Giao thông)", "역 (驛 - Dịch/Ga)", "지하철 (地下鐵 - Địa hạ thiết)"]
+    },
+    {
+      "unitNumber": 10,
+      "id": "unit-10",
+      "title": "Kế hoạch & Hẹn bạn",
+      "communicativeGoal": "Nói dự định tương lai, rủ rê và nối hành động theo trình tự.",
+      "lessonsCount": 3,
+      "vocabTarget": 34,
+      "grammarPoints": ["Tương lai -(으)ㄹ 거예요", "Rủ rê -(으)ㄹ까요?", "Nối câu V-고 V"],
+      "hvptContrasts": ["할 거예요 [할꺼예요] tensification", "약속 (Hán-Việt false-friend alert)"],
+      "interleavedContrasts": ["-았/었어요 vs -아요/어요 vs -(으)ㄹ 거예요", "-(으)ㄹ까요? vs -(으)세요"],
+      "hanjaFamilies": ["계획 (計劃 - Kế hoạch)", "여행 (旅行 - Lữ hành)", "약속 (約束 - Ước thúc)"]
+    },
+    {
+      "unitNumber": 11,
+      "id": "unit-11",
+      "title": "Gia đình & Kính ngữ cơ bản",
+      "communicativeGoal": "Giới thiệu gia đình bằng kính ngữ phù hợp và miêu tả ngoại hình, tính cách.",
+      "lessonsCount": 4,
+      "vocabTarget": 42,
+      "grammarPoints": ["Kính ngữ -(으)시-", "계시다 / 드시다 / 주무시다", "Định ngữ cơ bản A-(으)ㄴ N (preview)"],
+      "hvptContrasts": ["가족 / 부모님", "친절하다 / 조용하다"],
+      "interleavedContrasts": ["Dạng thường vs Kính ngữ -(으)시-", "은/는 vs 이/가 + 께서 (preview)"],
+      "hanjaFamilies": ["가족 (家族 - Gia tộc)", "부모 (父母 - Phụ mẫu)", "친절 (親切 - Thân thiết)"]
+    },
+    {
+      "unitNumber": 12,
+      "id": "unit-12",
+      "title": "Ôn tập Tổng hợp & Thi thử TOPIK I Mini",
+      "communicativeGoal": "Kiểm tra khả năng nhớ thật và phản xạ nghe–đọc theo chuẩn đề thi TOPIK I.",
+      "lessonsCount": 3,
+      "vocabTarget": 30,
+      "grammarPoints": ["Tổng hợp toàn bộ 26 điểm ngữ pháp Sơ cấp 1"],
+      "hvptContrasts": ["Toàn bộ cặp tối thiểu & biến âm sơ cấp"],
+      "interleavedContrasts": ["Tổng hợp toàn bộ trợ từ & 3 thì"],
+      "hanjaFamilies": ["시험 (試驗 - Thí nghiệm/Thi)", "합격 (合格 - Hợp cách/Đỗ)"]
+    }
+  ]
+}

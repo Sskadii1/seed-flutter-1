@@ -1,0 +1,309 @@
+{
+  "unitId": "unit-0",
+  "unitNumber": 0,
+  "title": "Hangul & Tai Nghe Tiếng Hàn",
+  "pedagogicalNotes": [
+    "Áp dụng HVPT (High Variability Phonetic Training) theo Lee & Park (2025) và Uchihara et al. (2025): mọi bài nghe cặp tối thiểu phát qua 3-4 giọng và nhiều tốc độ.",
+    "Đánh thẳng vào 3 điểm yếu của người Việt: hệ phụ âm tắc 3 bậc, cặp nguyên âm ㅗ/ㅓ và ㅐ/ㅔ, patchim ㄴ/ㄹ (DTU 2024; Im 2019)."
+  ],
+  "lessons": [
+    {
+      "lessonId": "u0-l1",
+      "order": 1,
+      "title": "Cấu trúc âm tiết & 6 nguyên âm gốc",
+      "description": "Hiểu cách ghép khối âm tiết Hangul (초성 + 중성) và phân biệt rõ ㅗ vs ㅓ, ㅡ vs ㅜ.",
+      "explicitRule": {
+        "title": "Âm tiết Hangul luôn cần phụ âm đầu + nguyên âm",
+        "summaryVi": "Trong tiếng Hàn, nguyên âm không đứng một mình. Khi âm tiết bắt đầu bằng nguyên âm, ta đặt chữ ㅇ (câm ở vị trí đầu) làm bệ đỡ. Lưu ý khẩu hình: ㅗ (ô tròn môi), ㅓ (ơ mở miệng dọc hơn), ㅡ (ư kéo ngang khóe miệng không tròn môi), ㅜ (u chu môi).",
+        "vietnameseTrap": "Người Việt hay đọc ㅓ giống 'ơ' tiếng Việt nhưng hơi hướng về 'o' nếu không hạ hàm, và hay nhầm ㅡ với ㅜ nếu chu môi."
+      },
+      "items": [
+        { "id": "j-a", "hangul": "아", "ipa": "a", "hintVi": "a mở rộng miệng", "hasBatchim": false },
+        { "id": "j-eo", "hangul": "어", "ipa": "ʌ", "hintVi": "ơ hạ hàm, không tròn môi", "hasBatchim": false },
+        { "id": "j-o", "hangul": "오", "ipa": "o", "hintVi": "ô tròn môi nhỏ", "hasBatchim": false },
+        { "id": "j-u", "hangul": "우", "ipa": "u", "hintVi": "u chu môi ra trước", "hasBatchim": false },
+        { "id": "j-eu", "hangul": "으", "ipa": "ɯ", "hintVi": "ư kéo ngang môi, không chu môi", "hasBatchim": false },
+        { "id": "j-i", "hangul": "이", "ipa": "i", "hintVi": "i kéo nhẹ khóe miệng", "hasBatchim": false }
+      ],
+      "exercises": [
+        {
+          "id": "u0-l1-ex1",
+          "stage": 1,
+          "type": "hvpt_minimal_pair",
+          "contrastCategory": "vowel_pair",
+          "promptVi": "Nghe kỹ khẩu hình nguyên âm từ nhiều giọng đọc và chọn chữ đúng:",
+          "audioVariants": [
+            { "speakerId": "female_seoul_1", "rate": "normal", "audioKey": "hvpt/eo_f1_norm.mp3" },
+            { "speakerId": "male_seoul_1", "rate": "slow", "audioKey": "hvpt/eo_m1_slow.mp3" },
+            { "speakerId": "female_seoul_2", "rate": "fast", "audioKey": "hvpt/eo_f2_fast.mp3" }
+          ],
+          "targetOptionId": "opt-eo",
+          "options": [
+            { "id": "opt-eo", "hangul": "어", "ipa": "ʌ", "meaningVi": "Âm mở không tròn môi (nét gạch ngang hướng vào trong bên trái)" },
+            { "id": "opt-o", "hangul": "오", "ipa": "o", "meaningVi": "Âm tròn môi (nét gạch ngắn hướng lên trên)" }
+          ],
+          "promptHint": "Gợi ý: Chú ý xem âm thanh có độ tròn môi như chữ 'ô' hay hạ hàm thoáng hơn như 'ơ'.",
+          "explicitExplanation": "어 (/ʌ/) phát âm với môi thả lỏng không chu tròn; 오 (/o/) bắt buộc chu tròn môi. Mẹo nhớ hình: gạch của ㅗ chỉ lên trên (miệng tròn nhỏ), gạch của ㅓ đi ngang sang trái."
+        },
+        {
+          "id": "u0-l1-ex2",
+          "stage": 1,
+          "type": "hvpt_minimal_pair",
+          "contrastCategory": "vowel_pair",
+          "promptVi": "Nghe và phân biệt cặp nguyên âm ㅡ và ㅜ:",
+          "audioVariants": [
+            { "speakerId": "male_seoul_1", "rate": "normal", "audioKey": "hvpt/eu_m1_norm.mp3" },
+            { "speakerId": "female_seoul_2", "rate": "slow", "audioKey": "hvpt/eu_f2_slow.mp3" }
+          ],
+          "targetOptionId": "opt-eu",
+          "options": [
+            { "id": "opt-eu", "hangul": "으", "ipa": "ɯ", "meaningVi": "Nét nằm ngang phẳng (ư)" },
+            { "id": "opt-u", "hangul": "우", "ipa": "u", "meaningVi": "Nét chỉ xuống dưới (u)" }
+          ],
+          "promptHint": "Gợi ý: Nếu nghe âm dẹt ngang (giống 'ư'), môi không chu ra phía trước.",
+          "explicitExplanation": "으 (/ɯ/) không chu môi; ㅜ (/u/) chu môi rõ rệt. Đừng để chữ cái đứng một mình — luôn có ㅇ câm đi trước."
+        },
+        {
+          "id": "u0-l1-ex3",
+          "stage": 3,
+          "type": "syllable_builder",
+          "promptVi": "Ghép âm tiết có âm đọc 'o' (ô) dùng phụ âm câm:",
+          "availableJamo": ["ㅇ", "ㄴ", "ㅗ", "ㅓ", "ㅜ"],
+          "expectedSyllable": "오",
+          "promptHint": "Gợi ý: Chọn chữ tròn ㅇ làm phụ âm đầu câm và nguyên âm nằm dưới có nét chỉ lên trên.",
+          "explicitExplanation": "ㅇ ở đầu âm tiết không phát âm, kết hợp với nguyên âm ngang ㅗ đặt phía dưới tạo thành khối âm tiết 오."
+        }
+      ]
+    },
+    {
+      "lessonId": "u0-l2",
+      "order": 2,
+      "title": "Phụ âm cơ bản & Quy tắc biến âm đầu",
+      "description": "Nắm 10 phụ âm cơ bản ㄱ, ㄴ, ㄷ, ㄹ, ㅁ, ㅂ, ㅅ, ㅇ, ㅈ, ㅎ và vị trí ghép ngang/dọc.",
+      "explicitRule": {
+        "title": "Phụ âm nhẹ (평음) không bật hơi mạnh ở đầu từ",
+        "summaryVi": "ㄱ(g/k), ㄷ(d/t), ㅂ(b/p), ㅈ(j/ch) ở đầu từ phát âm nhẹ, hơi thoát ra vừa phải và cao độ giọng (f0) hơi trầm xuống; khi kẹp giữa hai nguyên âm thì nghe êm như g, d, b, j.",
+        "vietnameseTrap": "Đừng đọc ㄱ, ㄷ, ㅂ thành 'cờ, tờ, pờ' bật hơi gắt như trong tiếng Anh — dễ bị nhầm với nhóm bật hơi ㅋ, ㅌ, ㅍ."
+      },
+      "items": [
+        { "id": "w-ai", "hangul": "아이", "ipa": "ai", "meaningVi": "em bé", "hasBatchim": false },
+        { "id": "w-uyu", "hangul": "우유", "ipa": "uju", "meaningVi": "sữa", "hasBatchim": false },
+        { "id": "w-namu", "hangul": "나무", "ipa": "namu", "meaningVi": "cây", "hasBatchim": false },
+        { "id": "w-bada", "hangul": "바다", "ipa": "pada", "meaningVi": "biển", "hasBatchim": false },
+        { "id": "w-gagu", "hangul": "가구", "ipa": "kagu", "meaningVi": "đồ nội thất", "hasBatchim": false }
+      ],
+      "exercises": [
+        {
+          "id": "u0-l2-ex1",
+          "stage": 1,
+          "type": "vocab_mcq",
+          "promptVi": "Từ '나무' (나 + 무) có nghĩa là gì?",
+          "audioKey": "vocab/namu.mp3",
+          "targetOptionId": "o1",
+          "options": [
+            { "id": "o1", "text": "Cái cây" },
+            { "id": "o2", "text": "Biển cả" },
+            { "id": "o3", "text": "Sữa tươi" },
+            { "id": "o4", "text": "Em bé" }
+          ],
+          "promptHint": "Gợi ý: Phụ âm đầu ㄴ đọc là 'n', ㅁ đọc là 'm'. Ghép lại nghe như 'na-mu'.",
+          "explicitExplanation": "나무 (na-mu) = cây. Ghi nhớ chữ ㄴ có hình dáng giống góc chữ L/N và ㅁ hình vuông giống chữ M (miệng)."
+        },
+        {
+          "id": "u0-l2-ex2",
+          "stage": 4,
+          "type": "ime_typing_recall",
+          "promptVi": "Gõ từ tiếng Hàn có nghĩa là 'biển' (ba-da):",
+          "expectedAnswers": ["바다"],
+          "promptHint": "Gợi ý: Âm tiết 1 dùng phụ âm ㅂ + ㅏ; âm tiết 2 dùng ㄷ + ㅏ.",
+          "explicitExplanation": "바다 (ba-da) = biển. Chữ ㅂ đứng đầu đọc nhẹ gần như 'b/p' không bật hơi; chữ ㄷ nằm giữa hai nguyên âm nghe rõ thành 'd'."
+        }
+      ]
+    },
+    {
+      "lessonId": "u0-l3",
+      "order": 3,
+      "title": "HVPT Đặc Biệt: 3 Bậc Phụ Âm Tắc (Thường – Căng – Bật hơi)",
+      "description": "Luyện tai đa giọng & đa tốc độ để phân biệt bộ ba ㄱ/ㄲ/ㅋ, ㄷ/ㄸ/ㅌ, ㅂ/ㅃ/ㅍ, ㅈ/ㅉ/ㅊ.",
+      "explicitRule": {
+        "title": "2 chìa khóa âm thanh: Lượng hơi (VOT) + Cao độ nguyên âm sau (f0)",
+        "summaryVi": "1) Thường (달): hơi vừa, giọng trầm nhẹ. 2) Căng (딸): gồng thanh quản, không bật hơi, giọng cao và chắc. 3) Bật hơi (탈): thổi luồng hơi mạnh (giấy trước miệng bay), giọng cao.",
+        "vietnameseTrap": "Người Việt thường nhầm phụ âm căng (ㄲ, ㄸ, ㅃ) với phụ âm thường (ㄱ, ㄷ, ㅂ) vì tiếng Việt không dùng sự căng thanh quản này."
+      },
+      "items": [
+        { "id": "mp-dal", "hangul": "달", "ipa": "tal", "meaningVi": "mặt trăng / tháng", "hasBatchim": true },
+        { "id": "mp-ttal", "hangul": "딸", "ipa": "t͈al", "meaningVi": "con gái", "hasBatchim": true },
+        { "id": "mp-tal", "hangul": "탈", "ipa": "tʰal", "meaningVi": "mặt nạ", "hasBatchim": true },
+        { "id": "mp-bul", "hangul": "불", "ipa": "pul", "meaningVi": "lửa", "hasBatchim": true },
+        { "id": "mp-ppul", "hangul": "뿔", "ipa": "p͈ul", "meaningVi": "sừng", "hasBatchim": true },
+        { "id": "mp-pul", "hangul": "풀", "ipa": "pʰul", "meaningVi": "cỏ / keo dán", "hasBatchim": true }
+      ],
+      "exercises": [
+        {
+          "id": "u0-l3-ex1",
+          "stage": 1,
+          "type": "hvpt_minimal_pair",
+          "contrastCategory": "3way_stop",
+          "promptVi": "Nghe kỹ và phân biệt bộ ba '달 / 딸 / 탈':",
+          "audioVariants": [
+            { "speakerId": "female_seoul_1", "rate": "normal", "audioKey": "hvpt/ttal_f1_norm.mp3" },
+            { "speakerId": "male_seoul_1", "rate": "fast", "audioKey": "hvpt/ttal_m1_fast.mp3" },
+            { "speakerId": "male_busan_1", "rate": "slow", "audioKey": "hvpt/ttal_m2_slow.mp3" }
+          ],
+          "targetOptionId": "opt-ttal",
+          "options": [
+            { "id": "opt-dal", "hangul": "달", "ipa": "tal", "meaningVi": "mặt trăng (thường)" },
+            { "id": "opt-ttal", "hangul": "딸", "ipa": "t͈al", "meaningVi": "con gái (căng)" },
+            { "id": "opt-tal", "hangul": "탈", "ipa": "tʰal", "meaningVi": "mặt nạ (bật hơi)" }
+          ],
+          "promptHint": "Gợi ý: Để ý xem có tiếng gió 'th' bật ra mạnh không? Nếu âm gọn, chắc, cao độ vọt lên mà không có hơi gió, đó là phụ âm căng.",
+          "explicitExplanation": "딸 (con gái) dùng âm căng ㄸ: dây thanh khép chặt tạo cảm giác nảy, chắc và cao độ cao ngay từ đầu nguyên âm, hoàn toàn không có luồng hơi bật như 탈."
+        },
+        {
+          "id": "u0-l3-ex2",
+          "stage": 1,
+          "type": "hvpt_minimal_pair",
+          "contrastCategory": "3way_stop",
+          "promptVi": "Nghe kỹ và phân biệt bộ ba '불 / 뿔 / 풀':",
+          "audioVariants": [
+            { "speakerId": "female_seoul_2", "rate": "normal", "audioKey": "hvpt/pul_f2_norm.mp3" },
+            { "speakerId": "male_seoul_1", "rate": "slow", "audioKey": "hvpt/pul_m1_slow.mp3" }
+          ],
+          "targetOptionId": "opt-pul",
+          "options": [
+            { "id": "opt-bul", "hangul": "불", "ipa": "pul", "meaningVi": "lửa (thường)" },
+            { "id": "opt-ppul", "hangul": "뿔", "ipa": "p͈ul", "meaningVi": "sừng (căng)" },
+            { "id": "opt-pul", "hangul": "풀", "ipa": "pʰul", "meaningVi": "cỏ (bật hơi)" }
+          ],
+          "promptHint": "Gợi ý: Lắng nghe luồng hơi bật mạnh ở đầu âm tiết trước khi vào vần 'ul'.",
+          "explicitExplanation": "풀 (cỏ) bắt đầu bằng phụ âm bật hơi ㅍ (pʰ) nên có luồng gió bật rất rõ, khác với âm nhẹ trầm của 불 và âm nén chắc của 뿔."
+        }
+      ]
+    },
+    {
+      "lessonId": "u0-l4",
+      "order": 4,
+      "title": "Nguyên âm ghép & Cảnh báo ㅐ / ㅔ",
+      "description": "Đọc nguyên âm y-glide (ㅑㅕㅛㅠ) và các nguyên âm ghép (ㅐ, ㅔ, ㅘ, ㅝ, ㅢ).",
+      "explicitRule": {
+        "title": "Trong giao tiếp hiện đại ㅐ và ㅔ phát âm gần như giống nhau — nhưng chính tả khác nghĩa!",
+        "summaryVi": "Ở tiếng Hàn Seoul đương đại, ㅐ (/ɛ/) và ㅔ (/e/) đã hợp nhất phát âm gần như hoàn toàn. Vì thế người học phải nhớ mặt chữ theo từ vựng (ví dụ: 내 = của tôi vs 네 = vâng / của bạn).",
+        "vietnameseTrap": "Khi gõ bàn phím, không thể chỉ nghe âm để đoán ㅐ hay ㅔ; cần học kết hợp nghĩa và cụm từ cố định."
+      },
+      "items": [
+        { "id": "w-yeoja", "hangul": "여자", "ipa": "jʌdʑa", "meaningVi": "phụ nữ", "hasBatchim": false },
+        { "id": "w-gyosil", "hangul": "교실", "ipa": "kjoɕil", "meaningVi": "phòng học", "hasBatchim": true },
+        { "id": "w-gwail", "hangul": "과일", "ipa": "kwail", "meaningVi": "trái cây", "hasBatchim": true },
+        { "id": "w-uisa", "hangul": "의사", "ipa": "ɰisa", "meaningVi": "bác sĩ", "hasBatchim": false }
+      ],
+      "exercises": [
+        {
+          "id": "u0-l4-ex1",
+          "stage": 4,
+          "type": "ime_typing_recall",
+          "promptVi": "Gõ từ tiếng Hàn có nghĩa là 'bác sĩ' (ui-sa):",
+          "expectedAnswers": ["의사"],
+          "promptHint": "Gợi ý: Chữ đầu dùng nguyên âm ghép ㅢ (ㅡ + ㅣ), chữ sau là 사.",
+          "explicitExplanation": "의사 (bác sĩ, Hán-Việt: Y Sĩ) viết bằng nguyên âm ghép ㅢ. Khi đứng đầu từ, ㅢ phát âm rõ từ 'ư' lướt sang 'i'."
+        }
+      ]
+    },
+    {
+      "lessonId": "u0-l5",
+      "order": 5,
+      "title": "Patchim (받침) & Cặp tử huyệt ㄴ vs ㄹ",
+      "description": "7 âm đại diện ở vị trí cuối âm tiết và luyện phân biệt âm mũi ㄴ vs âm uốn lưỡi ㄹ.",
+      "explicitRule": {
+        "title": "Dù viết nhiều phụ âm khác nhau, ở cuối âm tiết chỉ phát ra đúng 7 âm!",
+        "summaryVi": "7 âm patchim đại diện: ㄱ [k], ㄴ [n], ㄷ [t], ㄹ [l], ㅁ [m], ㅂ [p], ㅇ [ng]. Đặc biệt, ㅅ, ㅆ, ㅈ, ㅊ, ㅌ, ㅎ ở cuối âm tiết đứng riêng đều đóng lại thành âm tắc [t] (ㄷ), không bật ra ngoài như tiếng Anh.",
+        "vietnameseTrap": "Theo nghiên cứu (DTU 2024), người Việt hay đọc nhầm patchim ㄹ thành 'n' hoặc bỏ mất đầu lưỡi chạm lợi. Khi phát âm ㄹ cuối (물, 알), đầu lưỡi phải cong chạm vào vòm lợi trên."
+      },
+      "items": [
+        { "id": "p-an", "hangul": "안", "ipa": "an", "meaningVi": "bên trong / không", "hasBatchim": true },
+        { "id": "p-al", "hangul": "알", "ipa": "al", "meaningVi": "quả trứng / hạt", "hasBatchim": true },
+        { "id": "p-mun", "hangul": "문", "ipa": "mun", "meaningVi": "cánh cửa", "hasBatchim": true },
+        { "id": "p-mul", "hangul": "물", "ipa": "mul", "meaningVi": "nước", "hasBatchim": true },
+        { "id": "p-kot", "hangul": "꽃", "ipa": "k͈ot̚", "meaningVi": "bông hoa", "hasBatchim": true }
+      ],
+      "exercises": [
+        {
+          "id": "u0-l5-ex1",
+          "stage": 1,
+          "type": "hvpt_minimal_pair",
+          "contrastCategory": "batchim_nl",
+          "promptVi": "Nghe thật kỹ âm cuối của từ và phân biệt '문 (cửa)' với '물 (nước)':",
+          "audioVariants": [
+            { "speakerId": "female_seoul_1", "rate": "normal", "audioKey": "hvpt/mul_f1_norm.mp3" },
+            { "speakerId": "male_seoul_1", "rate": "slow", "audioKey": "hvpt/mul_m1_slow.mp3" }
+          ],
+          "targetOptionId": "opt-mul",
+          "options": [
+            { "id": "opt-mun", "hangul": "문", "ipa": "mun", "meaningVi": "cánh cửa (patchim ㄴ - âm mũi)" },
+            { "id": "opt-mul", "hangul": "물", "ipa": "mul", "meaningVi": "nước (patchim ㄹ - đầu lưỡi chạm lợi)" }
+          ],
+          "promptHint": "Gợi ý: Để ý xem âm cuối có thoát hơi qua mũi (như 'n') hay lưỡi cuộn chạm vòm miệng tạo âm 'l' mượt.",
+          "explicitExplanation": "물 kết thúc bằng patchim ㄹ [l]: luồng hơi đi qua hai bên lưỡi khi đầu lưỡi chạm lợi trên. Còn 문 kết thúc bằng âm mũi ㄴ [n]."
+        },
+        {
+          "id": "u0-l5-ex2",
+          "stage": 2,
+          "type": "context_cloze",
+          "promptVi": "Chữ '꽃' (hoa) khi đọc đứng một mình sẽ phát âm âm cuối giống chữ nào?",
+          "targetOptionId": "opt-t",
+          "options": [
+            { "id": "opt-t", "text": "ㄷ [t] — đọc là [꼳]" },
+            { "id": "opt-ch", "text": "ㅊ [ch] — bật hơi 'ch' ra ngoài" },
+            { "id": "opt-k", "text": "ㄱ [k] — đọc là [꼭]" }
+          ],
+          "promptHint": "Gợi ý: Nhớ quy tắc 7 âm đại diện ở patchim — phụ âm ㅊ không nằm trong 7 âm cuối.",
+          "explicitExplanation": "Theo quy tắc trung hòa âm cuối tiếng Hàn, các chữ ㅅ, ㅆ, ㅈ, ㅊ, ㅌ khi làm patchim đứng độc lập đều biến thành âm tắc không bật hơi [ㄷ] → 꽃 đọc là [꼳]."
+        }
+      ]
+    },
+    {
+      "lessonId": "u0-l6",
+      "order": 6,
+      "title": "Quy tắc nối âm (연음) & Làm chủ bàn phím 2-beolsik",
+      "description": "Hiểu vì sao '한국어' đọc là [한구거] và gõ thành thạo từ có patchim.",
+      "explicitRule": {
+        "title": "Patchim gặp nguyên âm (ㅇ) sẽ nhảy sang làm phụ âm đầu của âm tiết sau!",
+        "summaryVi": "Khi âm tiết trước có patchim và âm tiết sau bắt đầu bằng chữ ㅇ (câm), âm patchim đó không giữ lại ở trước mà trượt sang nối thẳng vào âm tiết sau: 한국어 → [한구거], 이름이 → [이르미], 있어요 → [이써요].",
+        "vietnameseTrap": "Người Việt mới học hay đọc ngắt từng chữ rời rạc ('han-guk-eo') khiến vừa sai tự nhiên vừa không nghe kịp người Hàn nói."
+      },
+      "items": [
+        { "id": "w-hangugeo", "hangul": "한국어", "ipa": "hangugʌ", "meaningVi": "tiếng Hàn Quốc", "hasBatchim": false },
+        { "id": "w-ireumi", "hangul": "이름이", "ipa": "irɯmi", "meaningVi": "tên (làm chủ ngữ)", "hasBatchim": false },
+        { "id": "w-isseoyo", "hangul": "있어요", "ipa": "is͈ʌjo", "meaningVi": "có / ở", "hasBatchim": false }
+      ],
+      "exercises": [
+        {
+          "id": "u0-l6-ex1",
+          "stage": 2,
+          "type": "hvpt_minimal_pair",
+          "contrastCategory": "liaison",
+          "promptVi": "Nghe cụm '한국어' và chọn cách phiên âm phát âm thực tế đúng nhất:",
+          "audioVariants": [
+            { "speakerId": "female_seoul_1", "rate": "normal", "audioKey": "hvpt/hangugeo_f1.mp3" },
+            { "speakerId": "male_seoul_1", "rate": "fast", "audioKey": "hvpt/hangugeo_m1.mp3" }
+          ],
+          "targetOptionId": "opt-liaison",
+          "options": [
+            { "id": "opt-liaison", "hangul": "[한구거]", "ipa": "han-gu-geo", "meaningVi": "Nối âm ㄱ sang 어" },
+            { "id": "opt-broken", "hangul": "[한국-어]", "ipa": "han-guk-eo", "meaningVi": "Ngắt cứng từng chữ" }
+          ],
+          "promptHint": "Gợi ý: Chữ 국 kết thúc bằng ㄱ, ngay sau nó là 어 bắt đầu bằng ㅇ câm.",
+          "explicitExplanation": "Patchim ㄱ của 국 nối sang âm tiết ㅇ của 어 tạo thành 거 → 한국어 đọc mượt thành [한구거]."
+        },
+        {
+          "id": "u0-l6-ex2",
+          "stage": 4,
+          "type": "ime_typing_recall",
+          "promptVi": "Gõ cụm từ 'tiếng Hàn Quốc' bằng bàn phím Hangul (chú ý chính tả gốc chứ không gõ theo âm nối):",
+          "expectedAnswers": ["한국어"],
+          "promptHint": "Gợi ý: Gõ lần lượt 3 âm tiết: 한 + 국 + 어.",
+          "explicitExplanation": "Đọc nối là [한구거] nhưng khi viết chính tả luôn giữ nguyên ranh giới hình vị: 한 + 국 (Quốc) + 어 (Ngữ) = 한국어."
+        }
+      ]
+    }
+  ]
+}

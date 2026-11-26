@@ -1,0 +1,388 @@
+{
+  "unitId": "unit-1",
+  "unitNumber": 1,
+  "title": "Chào hỏi & Giới thiệu bản thân",
+  "communicativeGoal": "Chào hỏi tự nhiên, tự giới thiệu tên, quốc tịch, nghề nghiệp và đặt câu hỏi lịch sự cơ bản.",
+  "vocabulary": [
+    {
+      "id": "v-annyeonghaseyo",
+      "hangul": "안녕하세요",
+      "ipa": "annjʌŋhasejo",
+      "meaningVi": "Xin chào (lịch sự)",
+      "pos": "expression",
+      "hasBatchim": false,
+      "hanja": { "characters": "安寧하세요", "hanViet": "An ninh", "note": "Gốc Hán-Việt 'An ninh' (bình an), dùng để hỏi thăm sức khỏe thành lời chào." },
+      "audioKey": "u1/annyeonghaseyo.mp3"
+    },
+    {
+      "id": "v-jeo",
+      "hangul": "저",
+      "ipa": "tɕʌ",
+      "meaningVi": "tôi (khiêm nhường)",
+      "pos": "pronoun",
+      "hasBatchim": false,
+      "hanja": null,
+      "audioKey": "u1/jeo.mp3"
+    },
+    {
+      "id": "v-ireum",
+      "hangul": "이름",
+      "ipa": "irɯm",
+      "meaningVi": "tên",
+      "pos": "noun",
+      "hasBatchim": true,
+      "hanja": null,
+      "audioKey": "u1/ireum.mp3"
+    },
+    {
+      "id": "v-beteunam",
+      "hangul": "베트남",
+      "ipa": "petʰɯnam",
+      "meaningVi": "Việt Nam",
+      "pos": "noun",
+      "hasBatchim": true,
+      "hanja": { "characters": "越南", "hanViet": "Việt Nam", "note": "Tên quốc gia phiên âm trực tiếp từ âm Hán-Việt." },
+      "audioKey": "u1/beteunam.mp3"
+    },
+    {
+      "id": "v-hanguk",
+      "hangul": "한국",
+      "ipa": "hanguk̚",
+      "meaningVi": "Hàn Quốc",
+      "pos": "noun",
+      "hasBatchim": true,
+      "hanja": { "characters": "韓國", "hanViet": "Hàn Quốc", "note": "국 (國) = Quốc (nước) → xuất hiện trong 외국 (ngoại quốc), 중국 (Trung Quốc)." },
+      "audioKey": "u1/hanguk.mp3"
+    },
+    {
+      "id": "v-saram",
+      "hangul": "사람",
+      "ipa": "saram",
+      "meaningVi": "người",
+      "pos": "noun",
+      "hasBatchim": true,
+      "hanja": null,
+      "audioKey": "u1/saram.mp3"
+    },
+    {
+      "id": "v-haksaeng",
+      "hangul": "학생",
+      "ipa": "haks͈ɛŋ",
+      "meaningVi": "học sinh, sinh viên",
+      "pos": "noun",
+      "hasBatchim": true,
+      "hanja": { "characters": "學生", "hanViet": "Học sinh", "note": "Họ từ 학 (學 - Học): 학교 (học hiệu/trường học), 대학 (đại học), 과학 (khoa học)." },
+      "audioKey": "u1/haksaeng.mp3"
+    },
+    {
+      "id": "v-seonsaengnim",
+      "hangul": "선생님",
+      "ipa": "sʌnsɛŋnim",
+      "meaningVi": "giáo viên, thầy/cô",
+      "pos": "noun",
+      "hasBatchim": true,
+      "hanja": { "characters": "先生님", "hanViet": "Tiên sinh + hậu tố kính trọng 님", "note": "선생 (Tiên sinh) ghép 님 để thể hiện sự tôn kính." },
+      "audioKey": "u1/seonsaengnim.mp3"
+    },
+    {
+      "id": "v-hoesawon",
+      "hangul": "회사원",
+      "ipa": "hwesawʌn",
+      "meaningVi": "nhân viên công ty",
+      "pos": "noun",
+      "hasBatchim": true,
+      "hanja": { "characters": "會社員", "hanViet": "Hội xã viên", "note": "Cẩn thận: 회사 (Hội xã) trong tiếng Hàn nghĩa là 'công ty'; 원 (員 - Viên) dùng cho thành viên như 공무원 (công vụ viên/công chức)." },
+      "audioKey": "u1/hoesawon.mp3"
+    },
+    {
+      "id": "v-ne",
+      "hangul": "네",
+      "ipa": "ne",
+      "meaningVi": "vâng / đúng rồi",
+      "pos": "interjection",
+      "hasBatchim": false,
+      "hanja": null,
+      "audioKey": "u1/ne.mp3"
+    },
+    {
+      "id": "v-aniyo",
+      "hangul": "아니요",
+      "ipa": "anijo",
+      "meaningVi": "không",
+      "pos": "interjection",
+      "hasBatchim": false,
+      "hanja": null,
+      "audioKey": "u1/aniyo.mp3"
+    },
+    {
+      "id": "v-bangapseumnida",
+      "hangul": "반갑습니다",
+      "ipa": "pangaps͈ɯmnida",
+      "meaningVi": "rất vui được gặp",
+      "pos": "expression",
+      "hasBatchim": false,
+      "hanja": null,
+      "audioKey": "u1/bangapseumnida.mp3"
+    },
+    {
+      "id": "v-seoul",
+      "hangul": "서울",
+      "ipa": "sʌul",
+      "meaningVi": "Seoul",
+      "pos": "noun",
+      "hasBatchim": true,
+      "hanja": null,
+      "audioKey": "u1/seoul.mp3"
+    },
+    {
+      "id": "v-chingu",
+      "hangul": "친구",
+      "ipa": "tɕʰingu",
+      "meaningVi": "bạn bè",
+      "pos": "noun",
+      "hasBatchim": false,
+      "hanja": { "characters": "親舊", "hanViet": "Thân cựu", "note": "Bạn thân thiết, cùng lứa tuổi." },
+      "audioKey": "u1/chingu.mp3"
+    }
+  ],
+  "grammarPoints": [
+    {
+      "id": "g-topic-eun-neun",
+      "pattern": "N은/는",
+      "meaningVi": "Trợ từ chủ đề ('về phần N thì...', 'N là...')",
+      "explicitRuleVi": "Gắn trực tiếp vào sau danh từ làm chủ đề câu. Nếu N kết thúc CÓ patchim → dùng 은 (이름은, 선생님은). Nếu N kết thúc KHÔNG có patchim → dùng 는 (저는, 친구는).",
+      "vietnameseL1Trap": "Tiếng Việt nói 'Tôi [khoảng trắng] là sinh viên' mà không có hậu tố sau 'Tôi'. Người Việt mới học rất hay quên gắn 는 sau 저.",
+      "examples": [
+        { "ko": "저는 학생이에요.", "vi": "Tôi là học sinh." },
+        { "ko": "제 이름은 란이에요.", "vi": "Tên tôi là Lan." }
+      ]
+    },
+    {
+      "id": "g-copula-ieyo-yeyo",
+      "pattern": "N이에요 / N예요",
+      "meaningVi": "...là N (câu trần thuật / câu hỏi lịch sự)",
+      "explicitRuleVi": "Đứng ở cuối câu, viết dính liền không cách với danh từ đứng trước. Có patchim → 이에요 (학생이에요, 한국 사람이에요). Không có patchim → 예요 (의사예요, 친구예요). Khi hỏi chỉ cần lên giọng ở cuối câu.",
+      "vietnameseL1Trap": "Người Việt hay cách chữ trước 이에요/예요 hoặc ghép nhầm với danh từ riêng (vd: tên 'Lan' có n là patchim → 란이에요; 'Hoa' không patchim → 호아예요)."
+    }
+  ],
+  "lessons": [
+    {
+      "lessonId": "u1-l1",
+      "order": 1,
+      "title": "Chào hỏi & Tôi là...",
+      "targetVocabIds": ["v-annyeonghaseyo", "v-jeo", "v-haksaeng", "v-seonsaengnim", "v-bangapseumnida"],
+      "targetGrammarIds": ["g-topic-eun-neun", "g-copula-ieyo-yeyo"],
+      "exercises": [
+        {
+          "id": "u1-l1-ex1",
+          "stage": 1,
+          "type": "vocab_mcq",
+          "targetVocabIds": ["v-seonsaengnim"],
+          "promptVi": "Nghe và chọn nghĩa của từ '선생님':",
+          "audioKey": "u1/seonsaengnim.mp3",
+          "targetOptionId": "o1",
+          "options": [
+            { "id": "o1", "text": "Giáo viên (Hán-Việt: Tiên sinh)" },
+            { "id": "o2", "text": "Học sinh (Hán-Việt: Học sinh)" },
+            { "id": "o3", "text": "Nhân viên công ty" },
+            { "id": "o4", "text": "Bạn bè" }
+          ],
+          "promptHint": "Gợi ý: Âm đầu 'seon-saeng' gần với âm Hán-Việt 'Tiên sinh', cộng hậu tố kính trọng -님.",
+          "explicitExplanation": "선생님 (Tiên sinh + 님) = Giáo viên, thầy/cô giáo. Học theo gốc Hán-Việt giúp bạn nhớ nhanh hơn hẳn cách học vẹt âm rời."
+        },
+        {
+          "id": "u1-l1-ex2",
+          "stage": 2,
+          "type": "context_cloze",
+          "targetVocabIds": ["v-jeo", "v-haksaeng"],
+          "targetGrammarIds": ["g-topic-eun-neun"],
+          "promptVi": "Điền trợ từ chủ đề đúng vào chỗ trống: 저___ 학생이에요.",
+          "targetOptionId": "o-neun",
+          "options": [
+            { "id": "o-neun", "text": "는" },
+            { "id": "o-eun", "text": "은" }
+          ],
+          "promptHint": "Gợi ý: Nhìn chữ '저'. Chữ này có phụ âm cuối (patchim) ở dưới không?",
+          "explicitExplanation": "'저' (tôi) kết thúc bằng nguyên âm ㅓ, không có patchim nên đi với 는 → 저는 학생이에요."
+        },
+        {
+          "id": "u1-l1-ex3",
+          "stage": 3,
+          "type": "sentence_scramble",
+          "targetVocabIds": ["v-jeo", "v-seonsaengnim"],
+          "targetGrammarIds": ["g-topic-eun-neun", "g-copula-ieyo-yeyo"],
+          "promptVi": "Ghép câu hoàn chỉnh (chú ý trợ từ được tách rời!): 'Tôi là giáo viên.'",
+          "tokens": ["는", "선생님", "저", "이에요", "은", "예요"],
+          "expectedSequence": ["저", "는", "선생님", "이에요"],
+          "promptHint": "Gợi ý: Cấu trúc tiếng Hàn là [Chủ đề + trợ từ] đứng trước, [Danh từ + là] đứng cuối câu. Kiểm tra patchim của '저' và '선생님'.",
+          "explicitExplanation": "저 (không patchim) + 는; 선생님 (có patchim ㅁ) + 이에요 → 저는 선생님이에요."
+        },
+        {
+          "id": "u1-l1-ex4",
+          "stage": 4,
+          "type": "ime_typing_recall",
+          "targetVocabIds": ["v-jeo", "v-haksaeng"],
+          "targetGrammarIds": ["g-topic-eun-neun", "g-copula-ieyo-yeyo"],
+          "promptVi": "Tự gõ hoàn chỉnh câu tiếng Hàn: 'Tôi là học sinh.'",
+          "expectedAnswers": ["저는 학생이에요.", "저는 학생이에요"],
+          "promptHint": "Gợi ý: Nhớ gắn trợ từ sau '저' (không patchim) và chọn 이에요/예요 đúng cho '학생' (có patchim ㅇ).",
+          "explicitExplanation": "저는 (tôi - chủ đề) + 학생이에요 (học sinh - là, viết dính liền với 학생)."
+        }
+      ]
+    },
+    {
+      "lessonId": "u1-l2",
+      "order": 2,
+      "title": "Quốc tịch & Nghề nghiệp (Hán–Việt)",
+      "targetVocabIds": ["v-beteunam", "v-hanguk", "v-saram", "v-hoesawon", "v-chingu"],
+      "targetGrammarIds": ["g-topic-eun-neun", "g-copula-ieyo-yeyo"],
+      "exercises": [
+        {
+          "id": "u1-l2-ex1",
+          "stage": 1,
+          "type": "vocab_mcq",
+          "targetVocabIds": ["v-hoesawon"],
+          "promptVi": "Dựa vào gốc Hán-Việt '會社員 (Hội xã viên)', từ '회사원' có nghĩa là gì?",
+          "audioKey": "u1/hoesawon.mp3",
+          "targetOptionId": "o1",
+          "options": [
+            { "id": "o1", "text": "Nhân viên công ty" },
+            { "id": "o2", "text": "Giáo viên đại học" },
+            { "id": "o3", "text": "Người Hàn Quốc" },
+            { "id": "o4", "text": "Hội học sinh" }
+          ],
+          "promptHint": "Gợi ý: Trong tiếng Hàn, 회사 (Hội xã) nghĩa là công ty, còn 원 (Viên) chỉ nhân viên/thành viên.",
+          "explicitExplanation": "회사원 = nhân viên công ty. Đây là trường hợp Hán-Việt gần nghĩa nhưng có dịch chuyển nhẹ (Hội xã = Công ty) — cần lưu ý để không hiểu thành 'xã hội'."
+        },
+        {
+          "id": "u1-l2-ex2",
+          "stage": 2,
+          "type": "particle_contrast",
+          "targetVocabIds": ["v-chingu", "v-saram"],
+          "targetGrammarIds": ["g-topic-eun-neun", "g-copula-ieyo-yeyo"],
+          "promptVi": "Hoàn thành câu bằng cách chọn ĐỒNG THỜI 2 mảnh đúng: 친구___ 베트남 사람___.",
+          "expectedPair": ["는", "이에요"],
+          "options": [
+            { "id": "p1", "pair": ["는", "이에요"], "label": "는 / 이에요" },
+            { "id": "p2", "pair": ["은", "예요"], "label": "은 / 예요" },
+            { "id": "p3", "pair": ["는", "예요"], "label": "는 / 예요" },
+            { "id": "p4", "pair": ["은", "이에요"], "label": "은 / 이에요" }
+          ],
+          "promptHint": "Gợi ý: Tách làm 2 bước: '친구' kết thúc bằng ㅜ (không patchim); '사람' kết thúc bằng ㅁ (có patchim).",
+          "explicitExplanation": "친구는 (không patchim → 는) + 베트남 사람이에요 (사람 có patchim ㅁ → 이에요)."
+        },
+        {
+          "id": "u1-l2-ex3",
+          "stage": 4,
+          "type": "ime_typing_recall",
+          "targetVocabIds": ["v-jeo", "v-beteunam", "v-saram"],
+          "targetGrammarIds": ["g-topic-eun-neun", "g-copula-ieyo-yeyo"],
+          "promptVi": "Tự gõ hoàn chỉnh câu tiếng Hàn: 'Tôi là người Việt Nam.'",
+          "expectedAnswers": ["저는 베트남 사람이에요.", "저는 베트남 사람이에요"],
+          "promptHint": "Gợi ý: 저 + trợ từ chủ đề, tiếp theo là 베트남 사람 + đuôi 'là' phù hợp với chữ 람.",
+          "explicitExplanation": "저는 베트남 사람이에요. Chú ý có khoảng trắng giữa 베트남 và 사람, nhưng 이에요 viết dính liền vào 사람."
+        }
+      ]
+    },
+    {
+      "lessonId": "u1-l3",
+      "order": 3,
+      "title": "Hỏi đáp tên & Xác nhận (네 / 아니요)",
+      "targetVocabIds": ["v-ireum", "v-ne", "v-aniyo", "v-seoul"],
+      "targetGrammarIds": ["g-topic-eun-neun", "g-copula-ieyo-yeyo"],
+      "exercises": [
+        {
+          "id": "u1-l3-ex1",
+          "stage": 2,
+          "type": "context_cloze",
+          "targetVocabIds": ["v-ireum"],
+          "targetGrammarIds": ["g-topic-eun-neun"],
+          "promptVi": "Chọn câu đúng cho nghĩa 'Tên tôi là Minjun (민준)':",
+          "targetOptionId": "o1",
+          "options": [
+            { "id": "o1", "text": "제 이름은 민준이에요." },
+            { "id": "o2", "text": "제 이름는 민준예요." },
+            { "id": "o3", "text": "제 이름은 민준예요." }
+          ],
+          "promptHint": "Gợi ý: Kiểm tra patchim của CẢ HAI chữ: '이름' (름 có ㅁ) và '민준' (준 có ㄴ).",
+          "explicitExplanation": "Cả 이름 (ㅁ) và 민준 (ㄴ) đều CÓ patchim → bắt buộc dùng 은 và 이에요: 제 이름은 민준이에요."
+        },
+        {
+          "id": "u1-l3-ex2",
+          "stage": 3,
+          "type": "audio_dictation",
+          "targetVocabIds": ["v-ne", "v-hanguk", "v-saram"],
+          "promptVi": "Nghe câu trả lời ở tốc độ bình thường và gõ lại chính xác:",
+          "audioKey": "u1/dictation_ne_hanguk.mp3",
+          "expectedAnswers": ["네, 한국 사람이에요.", "네 한국 사람이에요", "네, 한국 사람이에요"],
+          "promptHint": "Gợi ý: Câu gồm 3 phần: '네' (vâng) + '한국 사람' (người Hàn Quốc) + đuôi 이에요.",
+          "explicitExplanation": "네, 한국 사람이에요. (Vâng, là người Hàn Quốc.)"
+        }
+      ]
+    },
+    {
+      "lessonId": "u1-l4",
+      "order": 4,
+      "title": "Hội thoại, Truyện ngắn & Tự giới thiệu",
+      "targetVocabIds": ["v-annyeonghaseyo", "v-jeo", "v-beteunam", "v-haksaeng", "v-bangapseumnida", "v-chingu"],
+      "targetGrammarIds": ["g-topic-eun-neun", "g-copula-ieyo-yeyo"],
+      "dialogue": [
+        { "speaker": "민준", "ko": "안녕하세요. 저는 민준이에요.", "vi": "Xin chào. Tôi là Minjun.", "audioKey": "u1/dlg_1.mp3" },
+        { "speaker": "란", "ko": "안녕하세요. 저는 란이에요. 반갑습니다.", "vi": "Xin chào. Tôi là Lan. Rất vui được gặp bạn.", "audioKey": "u1/dlg_2.mp3" },
+        { "speaker": "민준", "ko": "란 씨는 학생이에요?", "vi": "Lan là sinh viên phải không?", "audioKey": "u1/dlg_3.mp3" },
+        { "speaker": "란", "ko": "네, 학생이에요. 저는 베트남 사람이에요.", "vi": "Vâng, tôi là sinh viên. Tôi là người Việt Nam.", "audioKey": "u1/dlg_4.mp3" }
+      ],
+      "gradedMicroStory": {
+        "titleVi": "Ngày đầu tiên của Lan ở Seoul",
+        "knownVocabRatio": 0.96,
+        "newGlossedWords": [{ "ko": "씨", "vi": "(hậu tố gọi tên lịch sự: bạn/anh/chị)" }],
+        "lines": [
+          { "ko": "안녕하세요. 제 이름은 란이에요.", "vi": "Xin chào. Tên tôi là Lan." },
+          { "ko": "저는 베트남 사람이에요. 서울 학생이에요.", "vi": "Tôi là người Việt Nam. Tôi là sinh viên ở Seoul." },
+          { "ko": "민준 씨는 제 한국 친구예요.", "vi": "Minjun là bạn người Hàn của tôi." },
+          { "ko": "민준 씨는 학생이에요? 아니요, 민준 씨는 회사원이에요.", "vi": "Minjun là sinh viên à? Không, Minjun là nhân viên công ty." }
+        ],
+        "shadowingAudioKey": "u1/story_1_full.mp3"
+      },
+      "exercises": [
+        {
+          "id": "u1-l4-ex1",
+          "stage": 2,
+          "type": "context_cloze",
+          "promptVi": "Theo câu chuyện ngắn vừa nghe/đọc, nghề nghiệp của Minjun là gì?",
+          "targetOptionId": "o2",
+          "options": [
+            { "id": "o1", "text": "Sinh viên (학생)" },
+            { "id": "o2", "text": "Nhân viên công ty (회사원)" },
+            { "id": "o3", "text": "Giáo viên (선생님)" }
+          ],
+          "promptHint": "Gợi ý: Đọc lại câu cuối của đoạn truyện có chữ '아니요'.",
+          "explicitExplanation": "Trong câu chuyện: '아니요, 민준 씨는 회사원이에요.' → Minjun là nhân viên công ty."
+        },
+        {
+          "id": "u1-l4-ex2",
+          "stage": 4,
+          "type": "shadowing_speak",
+          "promptVi": "Nghe câu '안녕하세요. 저는 베트남 사람이에요.' và đọc nhại theo ngay sau giọng mẫu.",
+          "referenceAudioKey": "u1/shadow_intro.mp3",
+          "targetText": "안녕하세요. 저는 베트남 사람이에요.",
+          "promptHint": "Gợi ý: Nối nhẹ '베트남 사람이에요' đừng ngắt quãng trước 이에요.",
+          "explicitExplanation": "Shadowing rèn trí nhớ âm thanh và tốc độ phản xạ nghe tự nhiên (Hamada, 2016)."
+        },
+        {
+          "id": "u1-l4-ex3",
+          "stage": 4,
+          "type": "guided_personal_output",
+          "promptVi": "Áp dụng cho CHÍNH BẠN (Involvement Load): Tự viết 2 câu giới thiệu tên và nghề nghiệp của bạn bằng tiếng Hàn.",
+          "templateHint": "안녕하세요. 저는 [Tên]이에요/예요. 저는 [Nghề nghiệp]이에요/예요.",
+          "validationRules": {
+            "mustIncludeAny": ["이에요", "예요"],
+            "mustIncludeTopicParticle": true
+          },
+          "promptHint": "Gợi ý: Hãy kiểm tra tên của bạn có âm cuối (patchim) không để chọn 이에요 (có patchim như Linh → 린이에요) hoặc 예요 (không patchim như Hoa → 호아예요).",
+          "explicitExplanation": "Việc tự đặt câu về bản thân (Strong Evaluation trong Involvement Load Hypothesis) giúp não bộ gắn kết ngữ pháp với ký ức cá nhân bền hơn nhiều lần so với làm trắc nghiệm."
+        }
+      ]
+    }
+  ]
+}
