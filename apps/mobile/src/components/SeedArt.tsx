@@ -12,7 +12,8 @@ export type BadgeName =
   | 'star'
   | 'check'
   | 'hint'
-  | 'chat';
+  | 'chat'
+  | 'board';
 
 interface GeometricBadgeProps {
   name: BadgeName;
@@ -31,6 +32,7 @@ const BADGE_THEMES: Record<BadgeName, { bg: string; border: string }> = {
   check: { bg: '#3E7B52', border: '#2D5D3D' },
   hint: { bg: '#D97706', border: '#B45309' },
   chat: { bg: '#3E7B52', border: '#2D5D3D' },
+  board: { bg: '#B08968', border: '#8D6B4C' },
 };
 
 export function GeometricBadge({ name, size = 30 }: GeometricBadgeProps) {
@@ -187,6 +189,24 @@ export function GeometricBadge({ name, size = 30 }: GeometricBadgeProps) {
         <View style={{ alignItems: 'center', gap: 2 }}>
           <View style={{ width: size * 0.13, height: size * 0.25, backgroundColor: '#FFFDF9', borderRadius: 99 }} />
           <View style={{ width: size * 0.13, height: size * 0.13, backgroundColor: '#FFFDF9', borderRadius: 99 }} />
+        </View>
+      )}
+      {name === 'board' && (
+        <View
+          style={{
+            width: size * 0.56,
+            height: size * 0.4,
+            borderRadius: 4,
+            borderWidth: 1.8,
+            borderColor: '#8D6B4C',
+            backgroundColor: '#F5EFE6',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+          }}
+        >
+          <View style={{ width: size * 0.34, height: 2, backgroundColor: '#2C221E', borderRadius: 2 }} />
+          <View style={{ width: size * 0.24, height: 2, backgroundColor: '#3E7B52', borderRadius: 2, alignSelf: 'flex-start', marginLeft: 3 }} />
         </View>
       )}
     </View>

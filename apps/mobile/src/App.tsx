@@ -2,8 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import type { Exercise, FsrsGrade } from '@seed/schema';
-import { inferExerciseErrorCategory } from '@seed/learning-engine';
+import type { Exercise, FsrsGrade, WonderLearningEvent } from '@seed/schema';
+import {
+  applyWonderLearningEventsToProfile,
+  inferExerciseErrorCategory,
+} from '@seed/learning-engine';
 import { injectWebTypography } from './lib/typography';
 import {
   applyExerciseOutcome,
@@ -20,13 +23,15 @@ import { ReviewQueueScreen } from './screens/ReviewQueueScreen';
 import { DictionaryScreen } from './screens/DictionaryScreen';
 import { RetentionDashboardScreen } from './screens/RetentionDashboardScreen';
 import { AiTutorScreen } from './screens/AiTutorScreen';
+import { WonderBoardScreen } from './screens/WonderBoardScreen';
 import { LessonPlayerModal, type ActiveLessonSession } from './screens/LessonPlayerModal';
 import { buildMangaCoachingBubble } from './lib/aiTutor';
 
-type TabKey = 'learn' | 'review' | 'dict' | 'stats' | 'chat';
+type TabKey = 'learn' | 'review' | 'dict' | 'stats' | 'chat' | 'board';
 
 const TABS: Array<{ key: TabKey; label: string; badge: BadgeName }> = [
   { key: 'learn', label: 'Lộ trình', badge: 'sprout' },
+  { key: 'board', label: 'Wonder Board', badge: 'board' },
   { key: 'review', label: 'Ôn tập', badge: 'brain' },
   { key: 'dict', label: 'Từ điển', badge: 'book' },
   { key: 'stats', label: 'Thống kê', badge: 'chart' },
@@ -41,6 +46,7 @@ export default function App() {
   const [activeSession, setActiveSession] = useState<ActiveLessonSession | null>(null);
   const [bubbleDismissed, setBubbleDismissed] = useState(false);
   const [focusCoachingSeq, setFocusCoachingSeq] = useState(0);
+  const [boardFullscreen, setBoardFullscreen] = useState(false);
 
   const coaching = buildMangaCoachingBubble(state);
 
@@ -89,6 +95,29 @@ export default function App() {
     if (tab === 'chat') {
       setBubbleDismissed(true);
     }
+    if (tab !== 'board') {
+      setBoardFullscreen(false);
+    }
+  };
+
+  const handleRecordWonderEvents = (events: WonderLearningEvent[]) => {
+    const confirmed = events.filter((e) => e.confirmed);
+    if (confirmed.length === 0) return;
+    setState((prev) => {
+      const seenKeys = new Set(prev.recordedWonderEventKeys ?? []);
+      const nextProfile = applyWonderLearningEventsToProfile(
+        prev.aiProfile,
+        confirmed,
+        seenKeys
+      );
+      const nextState: SeedLearningState = {
+        ...prev,
+        aiProfile: nextProfile,
+        recordedWonderEventKeys: Array.from(seenKeys).slice(-300),
+      };
+      saveLearningState(nextState);
+      return nextState;
+    });
   };
 
   const openAiWithCoaching = () => {
@@ -102,7 +131,7 @@ export default function App() {
       <SafeAreaView style={styles.root}>
         <StatusBar style="dark" />
         <View style={[styles.shell, isWide && styles.shellWide]}>
-          {isWide && (
+          {isWide && !(activeTab === 'board' && boardFullscreen) && (
             <View style={styles.sidebar}>
               <View style={styles.brandBlock}>
                 <View style={styles.brandMark}>
@@ -132,7 +161,10 @@ export default function App() {
                         </Text>
                       </Pressable>
 
-                      {t.key === 'chat' && activeTab !== 'chat' && !bubbleDismissed && (
+                      {t.key === 'chat' &&
+                        activeTab !== 'chat' &&
+                        activeTab !== 'board' &&
+                        !bubbleDismissed && (
                         <View nativeID="seed-manga-popup" style={styles.mangaBubbleWrap}>
                           <View style={styles.mangaBubbleTailTop} />
                           <View style={styles.mangaBubbleTopRow}>
@@ -179,7 +211,7 @@ export default function App() {
           )}
 
           <View style={styles.content}>
-            {!isWide && (
+            {!isWide && !(activeTab === 'board' && boardFullscreen) && (
               <View style={styles.mobileHeader}>
                 <View style={styles.mobileBrandRow}>
                   <View style={styles.brandMarkSmall}>
@@ -218,9 +250,17 @@ export default function App() {
               {activeTab === 'chat' && (
                 <AiTutorScreen state={state} focusCoachingSeq={focusCoachingSeq} />
               )}
+              {activeTab === 'board' && (
+                <WonderBoardScreen
+                  aiProfile={state.aiProfile}
+                  sidebarCollapsed={boardFullscreen}
+                  onToggleSidebar={() => setBoardFullscreen((v) => !v)}
+                  onRecordLearningEvents={handleRecordWonderEvents}
+                />
+              )}
             </View>
 
-            {!isWide && activeTab !== 'chat' && !bubbleDismissed && (
+            {!isWide && activeTab !== 'chat' && activeTab !== 'board' && !bubbleDismissed && (
               <View style={styles.mobileMangaWrap}>
                 <View nativeID="seed-manga-mobile" style={styles.mobileMangaBubble}>
                   <View style={styles.mangaBubbleTopRow}>

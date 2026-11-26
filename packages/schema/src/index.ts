@@ -362,3 +362,5 @@ export function validateExerciseEnvelope(ex: unknown): BaseExercise {
 export const roadmapData = roadmapJson as CurriculumRoadmap;
 export const unit0Data = unit0Json as Unit0Content;
 export const unit1Data = unit1Json as Unit1Content;
+
+export * from './wonder-board';

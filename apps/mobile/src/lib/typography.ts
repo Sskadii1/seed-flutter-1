@@ -6,8 +6,15 @@ export const FONT_SANS =
 export const FONT_HANGUL =
   "'Noto Sans KR', 'Be Vietnam Pro', 'Malgun Gothic', sans-serif";
 
+export const FONT_CHALK =
+  "'Gaegu', 'Nanum Pen Script', 'Be Vietnam Pro', 'Noto Sans KR', sans-serif";
+
+export const FONT_CHALK_KO =
+  "'Gaegu', 'Nanum Pen Script', 'Noto Sans KR', 'Be Vietnam Pro', sans-serif";
+
 export const WEB_SANS_STYLE = Platform.OS === 'web' ? { fontFamily: FONT_SANS } : {};
 export const WEB_HANGUL_STYLE = Platform.OS === 'web' ? { fontFamily: FONT_HANGUL } : {};
+export const WEB_CHALK_STYLE = Platform.OS === 'web' ? { fontFamily: FONT_CHALK } : {};
 
 interface MinimalDocument {
   getElementById(id: string): unknown;
@@ -36,7 +43,7 @@ export function injectWebTypography(): void {
     link.id = 'seed-google-fonts';
     link.rel = 'stylesheet';
     link.href =
-      'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap';
+      'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Gaegu:wght@400;700&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;600;700&display=swap';
     doc.head.appendChild(link);
   }
 

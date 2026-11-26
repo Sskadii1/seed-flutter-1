@@ -29,6 +29,7 @@ export interface SeedLearningState {
   streakDays: number;
   simulatedNowOffsetDays: number;
   aiProfile: AdaptiveAiProfile;
+  recordedWonderEventKeys?: string[];
 }
 
 const STORAGE_KEY = 'seed_korean_learning_state_v1';
@@ -74,6 +75,7 @@ export function createInitialState(): SeedLearningState {
     streakDays: 1,
     simulatedNowOffsetDays: 0,
     aiProfile: createInitialAiProfile(),
+    recordedWonderEventKeys: [],
   };
 }
 

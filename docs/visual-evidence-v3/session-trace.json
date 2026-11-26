@@ -1,0 +1,36 @@
+{
+  "capturedAt": "2026-11-26T14:20:50.774Z",
+  "trace": [
+    {
+      "session": "Phase0+D",
+      "strokes": 2,
+      "activeAnns": 0
+    },
+    {
+      "session": "E",
+      "regionStatus": "PROVIDER_UNAVAILABLE",
+      "apiCalls": 1
+    },
+    {
+      "session": "A",
+      "activeAnnotations": [
+        "가요",
+        "사과가"
+      ]
+    },
+    {
+      "session": "B",
+      "teachingPhrase": "안녕하세요.",
+      "stepIndex": 1
+    },
+    {
+      "session": "C",
+      "activeErrorsAfterEdit": 0
+    },
+    {
+      "session": "F+G",
+      "eloBeforeReload": 1025.3784527132652,
+      "eloAfterReload": 1025.3784527132652
+    }
+  ]
+}
