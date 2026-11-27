@@ -14,9 +14,71 @@ export interface BrowserVisionConfig {
   allowCloudAi: boolean;
   gatewayUrl: string;
   gatewayToken: string;
+  /** True when same-origin /api/wonder/health reports visionReady: true */
+  sameOriginVisionReady?: boolean;
   /** Explicit DEV-ONLY fallback key if no production gatewayUrl is set */
   devDirectApiKey?: string;
   devDirectProvider?: 'gemini' | 'openai' | 'auto';
+}
+
+export interface WonderServerHealth {
+  ok: boolean;
+  tutorReady: boolean;
+  visionReady: boolean;
+  providers: {
+    deepseek?: boolean;
+    gemini?: boolean;
+    openai?: boolean;
+  };
+}
+
+/**
+ * Discovers /api/wonder/health on same-origin web or configured gatewayUrl.
+ * Returns null cleanly when running offline or on static local exports without API routes.
+ */
+export async function fetchWonderServerHealth(
+  gatewayUrl = '',
+  gatewayToken = ''
+): Promise<WonderServerHealth | null> {
+  const gFetch = (globalThis as unknown as { fetch?: typeof fetch }).fetch;
+  if (typeof gFetch !== 'function') return null;
+
+  const gLoc = (globalThis as unknown as { location?: { origin?: string } }).location;
+  const cleanGateway = gatewayUrl.trim().replace(/\/+$/, '');
+  const endpoint = cleanGateway
+    ? `${cleanGateway}/api/wonder/health`
+    : gLoc?.origin && /^https?:/i.test(gLoc.origin)
+      ? '/api/wonder/health'
+      : '';
+  if (!endpoint) return null;
+
+  const ac = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ac ? setTimeout(() => ac.abort(), 4000) : null;
+  try {
+    const headers: Record<string, string> = {};
+    if (gatewayToken.trim()) {
+      headers.Authorization = `Bearer ${gatewayToken.trim()}`;
+    }
+    const resp = await gFetch(endpoint, {
+      method: 'GET',
+      signal: ac?.signal,
+      headers,
+    });
+    const ct = resp.headers?.get?.('content-type') || '';
+    if (!resp.ok || !ct.includes('application/json')) return null;
+    const raw = (await resp.json()) as Partial<WonderServerHealth>;
+    if (!raw || typeof raw.ok !== 'boolean') return null;
+    return {
+      ok: raw.ok,
+      tutorReady: Boolean(raw.tutorReady),
+      visionReady: Boolean(raw.visionReady),
+      providers: raw.providers ?? {},
+    };
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /**
@@ -134,6 +196,7 @@ export interface WonderServerTutorAction {
 export async function requestWonderServerTutor(params: {
   regions: Array<{ regionId: string; recognizedText: string; language: string }>;
   guidanceLevel: string;
+  intent?: 'ambient' | 'explain' | 'translate' | 'grammar_check' | 'practice_exercise';
   gatewayUrl?: string;
   gatewayToken?: string;
   signal?: AbortSignal;
@@ -164,6 +227,7 @@ export async function requestWonderServerTutor(params: {
       body: JSON.stringify({
         regions: params.regions.slice(0, 8),
         guidanceLevel: params.guidanceLevel,
+        intent: params.intent ?? 'ambient',
       }),
     });
     const ct = resp.headers?.get?.('content-type') || '';
@@ -188,7 +252,12 @@ export function createBrowserVisionProvider(
 ): HandwritingRecognitionProvider | undefined {
   const cleanGateway = cfg.gatewayUrl.trim().replace(/\/+$/, '');
   const cleanDevKey = (cfg.devDirectApiKey ?? '').trim();
-  const hasGateway = cleanGateway.length > 0;
+  const gLoc = (globalThis as unknown as { location?: { origin?: string } }).location;
+  const canSameOrigin =
+    Boolean(cfg.sameOriginVisionReady) &&
+    cleanGateway.length === 0 &&
+    Boolean(gLoc?.origin && /^https?:/i.test(gLoc.origin));
+  const hasGateway = cleanGateway.length > 0 || canSameOrigin;
   const hasDevDirect = !hasGateway && cfg.allowCloudAi && cleanDevKey.length > 0;
 
   if (!cfg.allowCloudAi && !hasGateway) {
@@ -197,6 +266,8 @@ export function createBrowserVisionProvider(
   if (!hasGateway && !hasDevDirect) {
     return undefined;
   }
+
+  const gatewayBase = cleanGateway;
 
   return {
     id: hasGateway ? 'seed-ai-gateway-vision' : 'dev-direct-vision',
@@ -242,7 +313,7 @@ export function createBrowserVisionProvider(
           if (cfg.gatewayToken.trim()) {
             headers.Authorization = `Bearer ${cfg.gatewayToken.trim()}`;
           }
-          const resp = await gFetch(`${cleanGateway}/api/wonder/recognize`, {
+          const resp = await gFetch(`${gatewayBase}/api/wonder/recognize`, {
             method: 'POST',
             signal: req.signal,
             headers,

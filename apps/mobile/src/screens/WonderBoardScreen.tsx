@@ -46,6 +46,7 @@ import {
   getWonderBoardAiModeLabel,
   mergeBoundingBoxes,
   orchestrateWonderTutor,
+  recognizeHandwritingRegions,
   recognizeWithHybridPipeline,
   reconcileAnnotationsWithStrokes,
   segmentMixedLanguageRuns,
@@ -66,8 +67,11 @@ import { speakKorean } from '../lib/speech';
 import { FONT_CHALK, FONT_SANS, waitForWonderFontsReady } from '../lib/typography';
 import {
   createBrowserVisionProvider,
+  fetchWonderServerHealth,
   renderRegionInkCropDataUrl,
   requestWonderServerTutor,
+  WonderServerHealth,
+  WonderServerTutorAction,
 } from '../lib/wonderGateway';
 import {
   WonderPrivacyConfig,
@@ -599,6 +603,102 @@ function buildResolvedAnnotationLayouts(
   }
 
   return layoutMap;
+}
+
+function buildAnnotationFromServerAction(params: {
+  action: WonderServerTutorAction;
+  boardId: string;
+  revision: number;
+  targetBox: WonderBBox;
+  targetStrokeIds: string[];
+  recognizedText: string;
+  startIndex: number;
+  endIndex: number;
+  occupiedBoxes: WonderBBox[];
+  theme: WonderThemeTokens;
+  idPrefix: string;
+  seedIndex: number;
+}): WonderAnnotation {
+  const {
+    action,
+    boardId,
+    revision,
+    targetBox,
+    targetStrokeIds,
+    recognizedText,
+    startIndex,
+    endIndex,
+    occupiedBoxes,
+    theme,
+    idPrefix,
+    seedIndex,
+  } = params;
+  const isPraise = action.type === 'DRAW_CHECKMARK';
+  const isExample = action.type === 'WRITE_EXAMPLE';
+  const isCorrection =
+    !isPraise &&
+    !isExample &&
+    Boolean(action.suggestedCorrection) &&
+    action.suggestedCorrection !== action.targetText;
+  const placement = computeCollisionFreePlacement({
+    targetBox,
+    desiredWidth: 320,
+    desiredHeight: 112,
+    preferredOrder: ['below', 'right', 'above', 'left'],
+    occupiedBoxes,
+  });
+  occupiedBoxes.push(placement.noteBox);
+  const accentColor = isPraise
+    ? theme.aiPositiveHex
+    : isCorrection
+      ? theme.aiCorrectionHex
+      : isExample
+        ? theme.aiSuggestionHex
+        : theme.aiSupportHex;
+
+  return {
+    annotation_id: `${idPrefix}_${revision}_${seedIndex}`,
+    stable_key: `${boardId}_srv_${action.type}_${targetStrokeIds.slice().sort().join('_')}`,
+    cloud_seed: seedIndex + 1,
+    board_id: boardId,
+    source_revision: revision,
+    source_stroke_ids: targetStrokeIds,
+    recognized_text: recognizedText,
+    target_text: action.targetText,
+    target_span: { start: startIndex, end: endIndex },
+    target_geometry: targetBox,
+    note_geometry: placement.noteBox,
+    arrow_path: placement.arrow,
+    annotation_type: isPraise
+      ? 'positive_feedback'
+      : isCorrection
+        ? 'grammar_correction'
+        : isExample
+          ? 'hint'
+          : 'explanation',
+    linguistic_category: isCorrection || isPraise ? 'naturalness' : 'vocabulary',
+    severity: isPraise ? 'praise' : isCorrection ? 'error' : 'info',
+    confidence: 0.9,
+    suggested_correction: action.suggestedCorrection || action.targetText,
+    explanation: action.explanation,
+    hint: action.hint,
+    visual_style: {
+      shape: 'scalloped_cloud',
+      accentColor,
+    },
+    placement_preference: placement.placement,
+    learning_concept_ids: [],
+    created_at: Date.now() + seedIndex,
+    status: 'active',
+    lifecycle_state: 'queued',
+    animation_progress: {
+      cloud: 0,
+      arrow: 0,
+      correction: 0,
+      explanation: 0,
+      completed: false,
+    },
+  };
 }
 
 const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
@@ -1415,6 +1515,11 @@ export function WonderBoardScreen({
   const [boardDraftText, setBoardDraftText] = useState('');
   const [confirmTextDraft, setConfirmTextDraft] = useState('');
   const [showConfirmInput, setShowConfirmInput] = useState(false);
+  const [ambiguousConfirmDraft, setAmbiguousConfirmDraft] = useState('');
+  const [dismissedAmbiguousRegionId, setDismissedAmbiguousRegionId] = useState<string | null>(null);
+  const [serverHealth, setServerHealth] = useState<WonderServerHealth | null>(null);
+  const serverHealthRef = useRef<WonderServerHealth | null>(null);
+  serverHealthRef.current = serverHealth;
 
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
   const [lassoPoly, setLassoPoly] = useState<Array<{ x: number; y: number }>>([]);
@@ -1462,6 +1567,35 @@ export function WonderBoardScreen({
       gDoc?.fonts?.removeEventListener?.('loadingdone', onLoadingDone);
     };
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    let active = true;
+    fetchWonderServerHealth(privacy.gatewayUrl, privacy.gatewayToken).then((health) => {
+      if (active) setServerHealth(health);
+    });
+    return () => {
+      active = false;
+    };
+  }, [privacy.gatewayUrl, privacy.gatewayToken]);
+
+  const aiBackendLabel = useMemo(() => {
+    if (!serverHealth?.tutorReady) return '';
+    if (serverHealth.providers.deepseek) return 'DeepSeek';
+    if (serverHealth.providers.gemini) return 'Gemini';
+    if (serverHealth.providers.openai) return 'OpenAI';
+    return 'Cloud AI';
+  }, [serverHealth]);
+
+  const latestAmbiguousRegion = useMemo(() => {
+    const candidates = board.regions.filter(
+      (r) =>
+        r.provenance === 'freehand_ink' &&
+        (r.recognitionStatus === 'AMBIGUOUS' || r.recognitionStatus === 'PROVIDER_UNAVAILABLE') &&
+        r.regionId !== dismissedAmbiguousRegionId
+    );
+    return candidates.length > 0 ? candidates[candidates.length - 1] : null;
+  }, [board.regions, dismissedAmbiguousRegionId]);
 
   const activeAnnotationsForLayout = useMemo(
     () => board.annotations.filter((a) => a.status === 'active'),
@@ -1672,6 +1806,7 @@ export function WonderBoardScreen({
         allowCloudAi: priv.allowCloudAi,
         gatewayUrl: priv.gatewayUrl,
         gatewayToken: priv.gatewayToken,
+        sameOriginVisionReady: Boolean(serverHealthRef.current?.visionReady),
         devDirectApiKey: apiCfg.apiKey,
         devDirectProvider:
           resolvedProv === 'gemini' || resolvedProv === 'openai' ? resolvedProv : 'auto',
@@ -1767,28 +1902,41 @@ export function WonderBoardScreen({
         return;
       }
 
-      // If local deterministic SLA engine didn't add feedback for recognized regions,
-      // consult /api/wonder/tutor (server-side DeepSeek / Gemini / OpenAI) on online deployments.
+      // Consult /api/wonder/tutor (server-side DeepSeek / Gemini / OpenAI) on recognized regions
+      // unless deterministic SLA engine already raised a concrete error, teaching card, or demo.
       let serverAnnotationsToAdd: WonderAnnotation[] = [];
+      let serverTutorCalled = false;
       const recognizedRegionsForServer = regions.filter(
         (r) =>
           (r.recognitionStatus === 'RECOGNIZED' || r.recognitionStatus === 'PARTIALLY_RECOGNIZED') &&
           r.recognizedText.trim().length > 0 &&
           r.completeness === 'complete'
       );
-      if (
-        tutorRes.annotationsToAdd.length === 0 &&
-        tutorRes.teachingCardsToAdd.length === 0 &&
-        recognizedRegionsForServer.length > 0 &&
-        !forceReview
-      ) {
+      const localErrorStrokeIds = new Set(
+        [...reconciled.filter((a) => a.status === 'active'), ...tutorRes.annotationsToAdd]
+          .filter((a) => a.severity === 'error' || a.annotation_id.startsWith('srv_'))
+          .flatMap((a) => a.source_stroke_ids)
+      );
+      const regionsNeedingServerTutor = recognizedRegionsForServer.filter((r) => {
+        const alreadyCovered = r.strokeIds.some((id) => localErrorStrokeIds.has(id));
+        if (alreadyCovered) return false;
+        if (!forceReview && (tutorRes.teachingCardsToAdd.length > 0 || tutorRes.hangulDemosToAdd.length > 0)) {
+          return false;
+        }
+        return true;
+      });
+      const canCallServerTutor =
+        Boolean(serverHealthRef.current?.tutorReady) || Boolean(priv.gatewayUrl.trim());
+      if (canCallServerTutor && regionsNeedingServerTutor.length > 0) {
+        serverTutorCalled = true;
         const serverTutor = await requestWonderServerTutor({
-          regions: recognizedRegionsForServer.map((r) => ({
+          regions: regionsNeedingServerTutor.map((r) => ({
             regionId: r.regionId,
             recognizedText: r.recognizedText,
             language: r.language,
           })),
           guidanceLevel: effectiveBoard.guidanceLevel ?? 'guided',
+          intent: forceReview ? 'grammar_check' : 'ambient',
           gatewayUrl: priv.gatewayUrl,
           gatewayToken: priv.gatewayToken,
           signal: ac?.signal,
@@ -1803,16 +1951,19 @@ export function WonderBoardScreen({
         serverAnnotationsToAdd = serverTutor.actions
           .filter(
             (act) =>
-              (act.type === 'DRAW_CLOUD' || act.type === 'WRITE_EXPLANATION') &&
+              (act.type === 'DRAW_CLOUD' ||
+                act.type === 'WRITE_EXPLANATION' ||
+                act.type === 'WRITE_EXAMPLE' ||
+                act.type === 'DRAW_CHECKMARK') &&
               act.targetText.length > 0 &&
               act.explanation.length > 0
           )
           .slice(0, 2)
           .flatMap((act, idx) => {
             const matchedRegion =
-              recognizedRegionsForServer.find((r) => r.regionId === act.regionId) ??
-              recognizedRegionsForServer.find((r) => r.recognizedText.includes(act.targetText)) ??
-              recognizedRegionsForServer[0];
+              regionsNeedingServerTutor.find((r) => r.regionId === act.regionId) ??
+              regionsNeedingServerTutor.find((r) => r.recognizedText.includes(act.targetText)) ??
+              regionsNeedingServerTutor[0];
             if (!matchedRegion) return [];
             const matchedSpan =
               matchedRegion.spans.find((sp) => sp.text.includes(act.targetText)) ??
@@ -1822,57 +1973,22 @@ export function WonderBoardScreen({
               matchedSpan?.strokeIds && matchedSpan.strokeIds.length > 0
                 ? matchedSpan.strokeIds
                 : matchedRegion.strokeIds;
-            const isCorrection =
-              Boolean(act.suggestedCorrection) && act.suggestedCorrection !== act.targetText;
-            const placement = computeCollisionFreePlacement({
-              targetBox,
-              desiredWidth: 320,
-              desiredHeight: 112,
-              preferredOrder: ['below', 'right', 'above', 'left'],
-              occupiedBoxes: alreadyOccupied,
-            });
-            alreadyOccupied.push(placement.noteBox);
-            const ann: WonderAnnotation = {
-              annotation_id: `srv_ann_${targetRevision}_${idx}`,
-              stable_key: `${effectiveBoard.id}_srv_${targetStrokeIds.slice().sort().join('_')}`,
-              cloud_seed: idx + 1,
-              board_id: effectiveBoard.id,
-              source_revision: targetRevision,
-              source_stroke_ids: targetStrokeIds,
-              recognized_text: matchedRegion.recognizedText,
-              target_text: act.targetText,
-              target_span: {
-                start: matchedSpan?.startIndex ?? 0,
-                end: matchedSpan?.endIndex ?? act.targetText.length,
-              },
-              target_geometry: targetBox,
-              note_geometry: placement.noteBox,
-              arrow_path: placement.arrow,
-              annotation_type: isCorrection ? 'grammar_correction' : 'explanation',
-              linguistic_category: isCorrection ? 'naturalness' : 'vocabulary',
-              severity: isCorrection ? 'error' : 'info',
-              confidence: 0.9,
-              suggested_correction: act.suggestedCorrection || act.targetText,
-              explanation: act.explanation,
-              hint: act.hint,
-              visual_style: {
-                shape: 'scalloped_cloud',
-                accentColor: isCorrection ? theme.aiCorrectionHex : theme.aiSupportHex,
-              },
-              placement_preference: placement.placement,
-              learning_concept_ids: [],
-              created_at: Date.now() + idx,
-              status: 'active',
-              lifecycle_state: 'queued',
-              animation_progress: {
-                cloud: 0,
-                arrow: 0,
-                correction: 0,
-                explanation: 0,
-                completed: false,
-              },
-            };
-            return [ann];
+            return [
+              buildAnnotationFromServerAction({
+                action: act,
+                boardId: effectiveBoard.id,
+                revision: targetRevision,
+                targetBox,
+                targetStrokeIds,
+                recognizedText: matchedRegion.recognizedText,
+                startIndex: matchedSpan?.startIndex ?? 0,
+                endIndex: matchedSpan?.endIndex ?? act.targetText.length,
+                occupiedBoxes: alreadyOccupied,
+                theme,
+                idPrefix: 'srv_ann',
+                seedIndex: idx,
+              }),
+            ];
           });
       }
 
@@ -1896,7 +2012,16 @@ export function WonderBoardScreen({
             .filter((a) => a.status === 'active' || a.status === 'dismissed')
             .map((a) => a.stable_key)
         );
-        const uniqueNew = [...tutorRes.annotationsToAdd, ...serverAnnotationsToAdd].filter(
+        const serverStrokeIds = new Set(serverAnnotationsToAdd.flatMap((a) => a.source_stroke_ids));
+        const filteredLocalAdds =
+          serverAnnotationsToAdd.length > 0
+            ? tutorRes.annotationsToAdd.filter(
+                (a) =>
+                  a.severity === 'error' ||
+                  !a.source_stroke_ids.some((id) => serverStrokeIds.has(id))
+              )
+            : tutorRes.annotationsToAdd;
+        const uniqueNew = [...filteredLocalAdds, ...serverAnnotationsToAdd].filter(
           (a) => !existingKeys.has(a.stable_key)
         );
         const recordedKeys = Array.from(
@@ -1911,7 +2036,8 @@ export function WonderBoardScreen({
           regions,
           boardContext,
           beginnerLoop: tutorRes.nextBeginnerLoop,
-          teacherState: tutorRes.recommendedTeacherState,
+          teacherState:
+            uniqueNew.length > 0 ? 'PLANNING_FEEDBACK' : tutorRes.recommendedTeacherState,
           annotations: deduplicateWonderAnnotations([...mergedAnnotations, ...uniqueNew]),
           teachingCards: [...b.teachingCards, ...tutorRes.teachingCardsToAdd],
           hangulDemos: [...(b.hangulDemos ?? []), ...tutorRes.hangulDemosToAdd],
@@ -1926,7 +2052,7 @@ export function WonderBoardScreen({
             lastLocalRecognitionMs: perception.localRecognitionMs,
             lastCloudRecognitionMs: perception.cloudRecognitionMs,
             lastLinguisticAnalysisMs: aiLatency,
-            apiCallCount: b.telemetry.apiCallCount + perception.apiCallsMade,
+            apiCallCount: b.telemetry.apiCallCount + perception.apiCallsMade + (serverTutorCalled ? 1 : 0),
           },
         };
       });
@@ -2468,11 +2594,11 @@ export function WonderBoardScreen({
     link.click();
   };
 
-  const handleGestureAction = (intent: WonderGestureIntent) => {
+  const handleGestureAction = async (intent: WonderGestureIntent) => {
     if (selectedStrokeIds.length === 0) return;
+    const snapBoard = latestBoardRef.current;
     const selSet = new Set(selectedStrokeIds);
-    // Deduplicate previous gesture/ambiguity annotations targeting the same strokes
-    const filteredExisting = board.annotations.filter(
+    const filteredExisting = snapBoard.annotations.filter(
       (a) =>
         !(
           a.status === 'active' &&
@@ -2480,8 +2606,92 @@ export function WonderBoardScreen({
           a.source_stroke_ids.some((id) => selSet.has(id))
         )
     );
+
+    const matchedRegions = snapBoard.regions.filter(
+      (r) => r.recognizedText.trim().length > 0 && r.strokeIds.some((id) => selSet.has(id))
+    );
+    const selStrokes = snapBoard.strokes.filter((s) => !s.deleted && selSet.has(s.id));
+    const fallbackRegs =
+      matchedRegions.length > 0 || selStrokes.length === 0
+        ? matchedRegions
+        : recognizeHandwritingRegions(selStrokes, snapBoard.id, snapBoard.revision).filter(
+            (r) => r.recognizedText.trim().length > 0
+          );
+
+    const canCallServerTutor =
+      Boolean(serverHealthRef.current?.tutorReady) || Boolean(privacyRef.current.gatewayUrl.trim());
+    const serverIntent =
+      intent === 'explain' ||
+      intent === 'translate' ||
+      intent === 'grammar_check' ||
+      intent === 'practice_exercise'
+        ? intent
+        : null;
+
+    if (canCallServerTutor && serverIntent && fallbackRegs.length > 0 && selStrokes.length > 0) {
+      setTeacherState('ANALYZING');
+      const serverTutor = await requestWonderServerTutor({
+        regions: fallbackRegs.map((r) => ({
+          regionId: r.regionId,
+          recognizedText: r.recognizedText,
+          language: r.language,
+        })),
+        guidanceLevel: snapBoard.guidanceLevel ?? 'guided',
+        intent: serverIntent,
+        gatewayUrl: privacyRef.current.gatewayUrl,
+        gatewayToken: privacyRef.current.gatewayToken,
+      });
+      const act = serverTutor.actions.find(
+        (a) => a.type !== 'WAIT' && a.targetText.length > 0 && a.explanation.length > 0
+      );
+      if (act) {
+        const targetBox = mergeBoundingBoxes(selStrokes.map((s) => s.bbox));
+        const occupiedBoxes = [
+          ...snapBoard.strokes.filter((s) => !s.deleted).map((s) => s.bbox),
+          ...filteredExisting.filter((a) => a.status === 'active').map((a) => a.note_geometry),
+          ...snapBoard.teachingCards.map((c) => c.geometry),
+        ];
+        const ann = buildAnnotationFromServerAction({
+          action: act,
+          boardId: snapBoard.id,
+          revision: snapBoard.revision,
+          targetBox,
+          targetStrokeIds: selectedStrokeIds,
+          recognizedText: fallbackRegs.map((r) => r.recognizedText).join(' '),
+          startIndex: 0,
+          endIndex: act.targetText.length,
+          occupiedBoxes,
+          theme,
+          idPrefix: `srv_gest_${intent}`,
+          seedIndex: Math.floor(Date.now() % 100),
+        });
+        updateActiveBoard((b) => {
+          const baseAnns = b.annotations.filter(
+            (a) =>
+              !(
+                a.status === 'active' &&
+                (a.annotation_type === 'explanation' || a.annotation_type === 'ambiguity_check') &&
+                a.source_stroke_ids.some((id) => selSet.has(id))
+              )
+          );
+          return {
+            ...b,
+            teacherState: 'PLANNING_FEEDBACK',
+            annotations: deduplicateWonderAnnotations([...baseAnns, ann]),
+            telemetry: {
+              ...b.telemetry,
+              apiCallCount: b.telemetry.apiCallCount + 1,
+            },
+          };
+        });
+        setSelectedStrokeIds([]);
+        return;
+      }
+      setTeacherState('OBSERVING');
+    }
+
     const res = executeGestureQuery({
-      board: { ...board, annotations: filteredExisting },
+      board: { ...snapBoard, annotations: filteredExisting },
       selectedStrokeIds,
       intent,
     });
@@ -2915,7 +3125,8 @@ export function WonderBoardScreen({
                 ]}
               />
               <Text style={[styles.statusText, { color: theme.primaryInkHex }]}>
-                Giáo viên AI: {getTeacherStateLabel(board.teacherState)}
+                Giáo viên AI{aiBackendLabel ? ` (${aiBackendLabel})` : ''}:{' '}
+                {getTeacherStateLabel(board.teacherState)}
                 {activeCount > 0 ? ` (${activeCount})` : ''}
               </Text>
             </View>
@@ -2923,6 +3134,13 @@ export function WonderBoardScreen({
         </View>
 
         <View style={styles.topRight}>
+          <Pressable
+            style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+            onPress={() => runAmbientAnalysis(latestBoardRef.current.revision, true)}
+          >
+            <Text style={[styles.pillBtnText, { color: theme.aiPositiveHex }]}>Chấm ngay</Text>
+          </Pressable>
+
           <Pressable
             style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
             onPress={() => setShowSpecimensDrawer((v) => !v)}
@@ -3452,6 +3670,50 @@ export function WonderBoardScreen({
 
         {/* Bottom Floating Collapsible Toolbar */}
         <View style={styles.bottomDock}>
+          {latestAmbiguousRegion &&
+            !serverHealth?.visionReady &&
+            selectedStrokeIds.length === 0 && (
+              <View style={[styles.quickWriteBar, { backgroundColor: theme.uiSurfaceHex }]}>
+                <TextInput
+                  style={styles.quickWriteInput}
+                  value={ambiguousConfirmDraft}
+                  onChangeText={setAmbiguousConfirmDraft}
+                  placeholder="Chưa đọc rõ nét vẽ tay — nhập chữ vừa viết để AI chấm..."
+                  placeholderTextColor="#8C7A6B"
+                />
+                <Pressable
+                  style={[
+                    styles.quickWriteBtn,
+                    ambiguousConfirmDraft.trim().length === 0 && { opacity: 0.45 },
+                  ]}
+                  disabled={ambiguousConfirmDraft.trim().length === 0}
+                  onPress={() => {
+                    const clean = ambiguousConfirmDraft.trim();
+                    if (!clean || !latestAmbiguousRegion) return;
+                    const updatedReg = applyConfirmedUserTranscript(latestAmbiguousRegion, clean);
+                    const nextRegs = latestBoardRef.current.regions.map((r) =>
+                      r.regionId === latestAmbiguousRegion.regionId ? updatedReg : r
+                    );
+                    const rev = latestBoardRef.current.revision;
+                    updateActiveBoard((b) => ({ ...b, regions: nextRegs }));
+                    setAmbiguousConfirmDraft('');
+                    setDismissedAmbiguousRegionId(latestAmbiguousRegion.regionId);
+                    setTimeout(() => runAmbientAnalysis(rev, true), 30);
+                  }}
+                >
+                  <Text style={styles.quickWriteBtnText}>Chấm bằng AI</Text>
+                </Pressable>
+                <Pressable
+                  style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+                  onPress={() => setDismissedAmbiguousRegionId(latestAmbiguousRegion.regionId)}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#8C7A6B' }}>
+                    {'\u00D7'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
           {showTypedComposer && !toolbarCollapsed && (
             <View style={[styles.quickWriteBar, { backgroundColor: theme.uiSurfaceHex }]}>
               <TextInput
