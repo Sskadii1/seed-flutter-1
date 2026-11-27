@@ -1,11 +1,21 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { unit1Data } from '@seed/schema';
 import { attachParticle, hasBatchim } from '@seed/learning-engine';
 import { GeometricBadge } from '../components/SeedArt';
 import { speakKorean } from '../lib/speech';
 
 export function DictionaryScreen() {
+  const { width } = useWindowDimensions();
+  const isPhone = width < 640;
   const [search, setSearch] = useState('');
   const [onlyHanja, setOnlyHanja] = useState(false);
   const [probeWord, setProbeWord] = useState('서울');
@@ -24,7 +34,7 @@ export function DictionaryScreen() {
   const probeHasBatchim = probeWord.trim().length > 0 && hasBatchim(probeWord);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, isPhone && styles.containerPhone]}>
       <View style={styles.labCard}>
         <Text style={styles.labTitle}>Kiểm tra Patchim & Trợ từ</Text>
         <TextInput
@@ -100,6 +110,7 @@ export function DictionaryScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 24, gap: 20, maxWidth: 960, width: '100%', alignSelf: 'center' },
+  containerPhone: { padding: 14, paddingBottom: 24, gap: 14 },
   labCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,

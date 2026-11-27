@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { HangulKeyboard } from '../components/HangulKeyboard';
@@ -60,6 +61,8 @@ function getSourceLabel(source?: 'deepseek' | 'openai' | 'gemini' | 'local'): st
 }
 
 export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProps) {
+  const { width } = useWindowDimensions();
+  const isPhone = width < 640;
   const [messages, setMessages] = useState<ChatMessage[]>(() => [createWelcomeMessage(state)]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -243,7 +246,7 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
   return (
     <View style={styles.root}>
       {/* Minimalist Top Bar */}
-      <View style={styles.header}>
+      <View style={[styles.header, isPhone && styles.headerPhone]}>
         <View style={styles.headerLeft}>
           <GeometricBadge name="chat" size={34} />
           <View style={styles.headerTitles}>
@@ -374,7 +377,7 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.quickStrip}
-        contentContainerStyle={styles.quickStripContent}
+        contentContainerStyle={[styles.quickStripContent, isPhone && styles.quickStripContentPhone]}
       >
         {QUICK_PROMPTS.map((prompt) => (
           <Pressable
@@ -391,7 +394,7 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
       <ScrollView
         ref={scrollRef}
         style={styles.feed}
-        contentContainerStyle={styles.feedContent}
+        contentContainerStyle={[styles.feedContent, isPhone && styles.feedContentPhone]}
         onContentSizeChange={scrollToEndSoon}
       >
         {/* Manga Speech Bubble Hero Callout */}
@@ -510,7 +513,7 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
       </ScrollView>
 
       {/* Bottom Composer */}
-      <View style={styles.composerWrap}>
+      <View style={[styles.composerWrap, isPhone && styles.composerWrapPhone]}>
         {showKeyboard && (
           <View style={styles.keyboardBox}>
             <HangulKeyboard tokens={jamoTokens} onChangeTokens={handleHangulChange} />
@@ -531,7 +534,7 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
             style={styles.input}
             value={input}
             onChangeText={handleManualTextChange}
-            placeholder="Hỏi ngữ pháp, dán câu tiếng Hàn để sửa, hoặc hỏi điểm yếu của bạn..."
+            placeholder="Hỏi ngữ pháp hoặc dán câu tiếng Hàn..."
             placeholderTextColor="#9A897E"
             multiline
           />
@@ -551,6 +554,7 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: '#FFFFFF',
   },
   header: {
@@ -564,6 +568,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  headerPhone: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -745,6 +754,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 8,
   },
+  quickStripContentPhone: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
   quickChip: {
     paddingHorizontal: 12,
     paddingVertical: 7,
@@ -764,6 +777,7 @@ const styles = StyleSheet.create({
   },
   feed: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: '#FFFFFF',
   },
   feedContent: {
@@ -772,6 +786,10 @@ const styles = StyleSheet.create({
     gap: 14,
     maxWidth: 920,
     width: '100%',
+  },
+  feedContentPhone: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   mangaRow: {
     flexDirection: 'row',
@@ -993,6 +1011,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
     paddingVertical: 12,
+  },
+  composerWrapPhone: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   keyboardBox: {
     marginBottom: 10,

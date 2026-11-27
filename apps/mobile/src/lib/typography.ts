@@ -20,6 +20,7 @@ export const WEB_HANGUL_STYLE = Platform.OS === 'web' ? { fontFamily: FONT_HANGU
 export const WEB_CHALK_STYLE = Platform.OS === 'web' ? { fontFamily: FONT_CHALK } : {};
 
 interface MinimalDocument {
+  querySelector?(selector: string): { content?: string; setAttribute?(name: string, val: string): void } | null;
   getElementById(id: string): unknown;
   createElement(tag: string): {
     id: string;
@@ -40,6 +41,14 @@ export function injectWebTypography(): void {
   if (Platform.OS !== 'web') return;
   const doc = (globalThis as unknown as { document?: MinimalDocument }).document;
   if (!doc || !doc.head) return;
+
+  const viewportMeta = doc.querySelector?.('meta[name="viewport"]');
+  if (viewportMeta) {
+    viewportMeta.setAttribute?.(
+      'content',
+      'width=device-width, initial-scale=1, viewport-fit=cover'
+    );
+  }
 
   const fontHref =
     'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Gaegu:wght@400;700&family=Mali:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&family=Playpen+Sans:wght@500;600;700&display=swap';
@@ -66,7 +75,19 @@ export function injectWebTypography(): void {
     style.id = 'seed-typography-css';
   }
   style.textContent = `
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
       html, body, #root {
+        width: 100%;
+        max-width: 100vw;
+        height: 100%;
+        height: 100dvh;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+        overscroll-behavior: none;
+        -webkit-text-size-adjust: 100%;
         background-color: #FFFFFF !important;
       }
       html, body, #root, input, textarea, button, [dir="auto"] {
@@ -75,14 +96,32 @@ export function injectWebTypography(): void {
         -moz-osx-font-smoothing: grayscale;
         text-rendering: optimizeLegibility;
       }
+      #seed-mobile-header {
+        padding-top: max(8px, env(safe-area-inset-top));
+      }
+      #seed-mobile-bottom-bar {
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+      }
       button, [role="button"], [tabindex="0"]:not(input):not(textarea) {
+        touch-action: manipulation;
         transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1), background-color 200ms ease, border-color 200ms ease;
       }
-      button:hover, [role="button"]:hover, [tabindex="0"]:not(input):not(textarea):hover {
-        transform: scale(1.022);
+      @media (hover: hover) and (pointer: fine) {
+        button:hover, [role="button"]:hover, [tabindex="0"]:not(input):not(textarea):hover {
+          transform: scale(1.022);
+        }
+        #seed-manga-popup:hover, #seed-manga-mobile:hover, #seed-manga-hero:hover {
+          transform: scale(1.032) translateY(-1.5px);
+          box-shadow: 0 14px 26px rgba(44, 34, 30, 0.16);
+        }
       }
       button:active, [role="button"]:active, [tabindex="0"]:not(input):not(textarea):active {
         transform: scale(0.988);
+      }
+      @media (max-width: 768px) {
+        input, textarea {
+          font-size: 16px !important;
+        }
       }
       #seed-manga-popup, #seed-manga-mobile, #seed-manga-hero {
         transition: transform 360ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 360ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -92,10 +131,6 @@ export function injectWebTypography(): void {
       }
       #seed-manga-hero {
         transform-origin: left 22px;
-      }
-      #seed-manga-popup:hover, #seed-manga-mobile:hover, #seed-manga-hero:hover {
-        transform: scale(1.032) translateY(-1.5px);
-        box-shadow: 0 14px 26px rgba(44, 34, 30, 0.16);
       }
       [id="seed-manga-body"]:hover {
         transform: none !important;

@@ -467,7 +467,8 @@ interface ChalkOverlayProps {
 function buildResolvedAnnotationLayouts(
   board: WonderBoardDocument,
   activeAnnotations: WonderAnnotation[],
-  activeWritingBox: WonderBBox | null
+  activeWritingBox: WonderBBox | null,
+  viewportWidth = 1200
 ): Record<string, ResolvedAnnotationVisualLayout> {
   const layoutMap: Record<string, ResolvedAnnotationVisualLayout> = {};
   const wordBoxes = board.regions.flatMap((r) => r.spans.map((sp) => sp.bbox));
@@ -476,6 +477,7 @@ function buildResolvedAnnotationLayouts(
   const placedClouds: WonderBBox[] = [];
   const placedNotes: WonderBBox[] = [];
   const vScale = Math.max(0.35, board.viewport.scale || 1);
+  const isNarrowPhone = viewportWidth < 680;
 
   for (const ann of activeAnnotations) {
     const neighbors = wordBoxes.filter(
@@ -533,11 +535,18 @@ function buildResolvedAnnotationLayouts(
     const explLineHeight = typo.explLineHeightWorldPx;
     const explGapTop = typo.explGapTopWorldPx;
 
+    const headerWrapWidth = isNarrowPhone
+      ? Math.max(200, (viewportWidth - 36) / vScale)
+      : Math.max(typo.maxLineWidthWorldPx + 40, 320);
+    const explWrapWidth = isNarrowPhone
+      ? Math.min(typo.maxLineWidthWorldPx, Math.max(200, (viewportWidth - 40) / vScale))
+      : typo.maxLineWidthWorldPx;
+
     const headerMetrics = wrapMixedLanguageRuns(
       corrLabel,
       'correction',
       headerFontSize,
-      Math.max(typo.maxLineWidthWorldPx + 40, 320),
+      headerWrapWidth,
       1.32,
       measureFontRunOnWeb,
       2
@@ -546,16 +555,19 @@ function buildResolvedAnnotationLayouts(
       ann.explanation,
       'explanation',
       explFontSize,
-      typo.maxLineWidthWorldPx,
+      explWrapWidth,
       typo.lineHeightRatio,
       measureFontRunOnWeb,
       8
     );
 
-    const measuredWidth = Math.max(
-      210,
+    const rawMeasuredWidth = Math.max(
+      200,
       Math.ceil(Math.max(headerMetrics.maxWidth, explMetrics.maxWidth) + 20)
     );
+    const measuredWidth = isNarrowPhone
+      ? Math.min(rawMeasuredWidth, Math.max(200, (viewportWidth - 24) / vScale))
+      : Math.max(210, rawMeasuredWidth);
     const headerBlockH = Math.max(headerFontSize * 1.32, headerMetrics.totalHeight);
     const measuredHeight = Math.max(
       Math.round(headerBlockH + (explMetrics.lines.length > 0 ? explMetrics.totalHeight + 22 : 12)),
@@ -574,11 +586,15 @@ function buildResolvedAnnotationLayouts(
       targetBox: ann.target_geometry,
       desiredWidth: measuredWidth,
       desiredHeight: measuredHeight,
-      preferredOrder: [ann.placement_preference, 'below', 'right', 'above', 'left'],
+      preferredOrder: isNarrowPhone
+        ? ['below', 'above', 'right', 'left']
+        : [ann.placement_preference, 'below', 'right', 'above', 'left'],
       occupiedBoxes: occupied,
       activeWritingBox,
       safeGap: typo.safeGapWorldPx,
-      maxWorldRight: Math.max(1080, ann.target_geometry.maxX + measuredWidth + 140),
+      maxWorldRight: isNarrowPhone
+        ? Math.max((viewportWidth - 12) / vScale, ann.target_geometry.maxX + 40)
+        : Math.max(1080, ann.target_geometry.maxX + measuredWidth + 140),
       cloudSeed: ann.cloud_seed ?? 1,
     });
 
@@ -1604,7 +1620,12 @@ export function WonderBoardScreen({
 
   const resolvedLayoutByAnnId = useMemo(
     () =>
-      buildResolvedAnnotationLayouts(board, activeAnnotationsForLayout, activeWritingBox),
+      buildResolvedAnnotationLayouts(
+        board,
+        activeAnnotationsForLayout,
+        activeWritingBox,
+        winWidth
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       activeAnnotationsForLayout,
@@ -1614,6 +1635,7 @@ export function WonderBoardScreen({
       board.teachingCards,
       board.viewport.scale,
       fontEpoch,
+      winWidth,
     ]
   );
 
@@ -1748,6 +1770,21 @@ export function WonderBoardScreen({
       renderCanvasNow();
     }
   });
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const el = canvasRef.current as unknown as Element | null;
+    const RO = (globalThis as unknown as {
+      ResizeObserver?: new (cb: () => void) => {
+        observe(target: Element): void;
+        disconnect(): void;
+      };
+    }).ResizeObserver;
+    if (!el || typeof RO !== 'function') return;
+    const obs = new RO(() => scheduleRender());
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   // Strip any legacy persisted unknown-ink/placeholder annotations on mount (never display "Xác nhận chữ viết" clouds)
   useEffect(() => {
@@ -3089,116 +3126,241 @@ export function WonderBoardScreen({
     };
   });
 
-  const canvasHeightGuess = Math.max(480, winHeight - 110);
+  const isPhone = winWidth < 680;
   const compactHeader = winWidth < 860;
   const activeCount = board.annotations.filter((a) => a.status === 'active').length;
 
   return (
     <View style={[styles.root, { backgroundColor: theme.backgroundHex }]}>
       {/* Minimal Low-Distraction Top Chrome */}
-      <View style={[styles.topBar, { borderBottomColor: theme.noteBorderHex }]}>
-        <View style={styles.topLeft}>
-          <Pressable
-            style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
-            onPress={onToggleSidebar}
-          >
-            <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
-              {sidebarCollapsed ? 'Menu' : 'Toàn màn hình'}
-            </Text>
-          </Pressable>
+      {isPhone ? (
+        <View style={[styles.topBarPhone, { borderBottomColor: theme.noteBorderHex }]}>
+          <View style={styles.mobileTopRow}>
+            <View style={styles.mobileTopLeft}>
+              <Pressable
+                style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex, flexShrink: 0 }]}
+                onPress={onToggleSidebar}
+              >
+                <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.uiTextHex }]}>
+                  {sidebarCollapsed ? 'Menu' : 'Toàn màn'}
+                </Text>
+              </Pressable>
 
-          <Pressable
-            style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
-            onPress={() => setShowBoardList((v) => !v)}
-          >
-            <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]} numberOfLines={1}>
-              {board.title}
-            </Text>
-          </Pressable>
+              <Pressable
+                style={[
+                  styles.pillBtn,
+                  styles.pillBtnPhone,
+                  { backgroundColor: theme.uiSurfaceHex, flexShrink: 1, minWidth: 60 },
+                ]}
+                onPress={() => setShowBoardList((v) => !v)}
+              >
+                <Text
+                  style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.uiTextHex }]}
+                  numberOfLines={1}
+                >
+                  {board.title}
+                </Text>
+              </Pressable>
+            </View>
 
-          {!compactHeader && (
-            <View style={[styles.statusBadge, { borderColor: theme.noteBorderHex }]}>
+            <View style={styles.mobileTopRight}>
+              <Pressable
+                style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
+                onPress={() => runAmbientAnalysis(latestBoardRef.current.revision, true)}
+              >
+                <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.aiPositiveHex }]}>
+                  Chấm
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
+                onPress={() => setShowSettingsDrawer((v) => !v)}
+              >
+                <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.uiTextHex }]}>
+                  Cài đặt
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.mobileActionScroll}
+          >
+            <View style={[styles.statusBadge, styles.pillBtnPhone, { borderColor: theme.noteBorderHex }]}>
               <View
                 style={[
                   styles.statusDot,
                   { backgroundColor: board.aiEnabled ? theme.aiPositiveHex : '#9CA3AF' },
                 ]}
               />
-              <Text style={[styles.statusText, { color: theme.primaryInkHex }]}>
-                Giáo viên AI{aiBackendLabel ? ` (${aiBackendLabel})` : ''}:{' '}
-                {getTeacherStateLabel(board.teacherState)}
+              <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.primaryInkHex }]}>
+                {aiBackendLabel || 'AI'}
                 {activeCount > 0 ? ` (${activeCount})` : ''}
               </Text>
             </View>
-          )}
+
+            <Pressable
+              style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => setShowTypedComposer((v) => !v)}
+            >
+              <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.uiTextHex }]}>
+                {showTypedComposer ? 'Ẩn ô gõ' : 'Gõ chữ'}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => setShowSpecimensDrawer((v) => !v)}
+            >
+              <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.uiTextHex }]}>
+                Mẫu thử
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => {
+                updateActiveBoard((b) => ({
+                  ...b,
+                  aiEnabled: !b.aiEnabled,
+                  teacherState: !b.aiEnabled ? 'OBSERVING' : 'IDLE',
+                }));
+              }}
+            >
+              <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.uiTextHex }]}>
+                {board.aiEnabled ? 'AI: Bật' : 'AI: Tắt'}
+              </Text>
+            </Pressable>
+
+            {Platform.OS === 'web' && (
+              <Pressable
+                style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
+                onPress={handleExportPng}
+              >
+                <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.uiTextHex }]}>
+                  Lưu ảnh
+                </Text>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => setConfirmClearOpen(true)}
+            >
+              <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: '#B42318' }]}>
+                Xóa bảng
+              </Text>
+            </Pressable>
+          </ScrollView>
         </View>
-
-        <View style={styles.topRight}>
-          <Pressable
-            style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
-            onPress={() => runAmbientAnalysis(latestBoardRef.current.revision, true)}
-          >
-            <Text style={[styles.pillBtnText, { color: theme.aiPositiveHex }]}>Chấm ngay</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
-            onPress={() => setShowSpecimensDrawer((v) => !v)}
-          >
-            <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>Mẫu thử</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
-            onPress={() => setShowTypedComposer((v) => !v)}
-          >
-            <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
-              {showTypedComposer ? 'Ẩn ô gõ' : 'Gõ chữ'}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
-            onPress={() => {
-              updateActiveBoard((b) => ({
-                ...b,
-                aiEnabled: !b.aiEnabled,
-                teacherState: !b.aiEnabled ? 'OBSERVING' : 'IDLE',
-              }));
-            }}
-          >
-            <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
-              {board.aiEnabled ? 'AI: Bật' : 'AI: Tắt'}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
-            onPress={() => setShowSettingsDrawer((v) => !v)}
-          >
-            <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>Cài đặt</Text>
-          </Pressable>
-
-          {Platform.OS === 'web' && (
+      ) : (
+        <View style={[styles.topBar, { borderBottomColor: theme.noteBorderHex }]}>
+          <View style={styles.topLeft}>
             <Pressable
               style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
-              onPress={handleExportPng}
+              onPress={onToggleSidebar}
             >
-              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>Lưu ảnh</Text>
+              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
+                {sidebarCollapsed ? 'Menu' : 'Toàn màn hình'}
+              </Text>
             </Pressable>
-          )}
 
-          <Pressable
-            style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
-            onPress={() => setConfirmClearOpen(true)}
-          >
-            <Text style={[styles.pillBtnText, { color: '#B42318' }]}>Xóa bảng</Text>
-          </Pressable>
+            <Pressable
+              style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => setShowBoardList((v) => !v)}
+            >
+              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]} numberOfLines={1}>
+                {board.title}
+              </Text>
+            </Pressable>
+
+            {!compactHeader && (
+              <View style={[styles.statusBadge, { borderColor: theme.noteBorderHex }]}>
+                <View
+                  style={[
+                    styles.statusDot,
+                    { backgroundColor: board.aiEnabled ? theme.aiPositiveHex : '#9CA3AF' },
+                  ]}
+                />
+                <Text style={[styles.statusText, { color: theme.primaryInkHex }]}>
+                  Giáo viên AI{aiBackendLabel ? ` (${aiBackendLabel})` : ''}:{' '}
+                  {getTeacherStateLabel(board.teacherState)}
+                  {activeCount > 0 ? ` (${activeCount})` : ''}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.topRight}>
+            <Pressable
+              style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => runAmbientAnalysis(latestBoardRef.current.revision, true)}
+            >
+              <Text style={[styles.pillBtnText, { color: theme.aiPositiveHex }]}>Chấm ngay</Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => setShowSpecimensDrawer((v) => !v)}
+            >
+              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>Mẫu thử</Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => setShowTypedComposer((v) => !v)}
+            >
+              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
+                {showTypedComposer ? 'Ẩn ô gõ' : 'Gõ chữ'}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => {
+                updateActiveBoard((b) => ({
+                  ...b,
+                  aiEnabled: !b.aiEnabled,
+                  teacherState: !b.aiEnabled ? 'OBSERVING' : 'IDLE',
+                }));
+              }}
+            >
+              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
+                {board.aiEnabled ? 'AI: Bật' : 'AI: Tắt'}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => setShowSettingsDrawer((v) => !v)}
+            >
+              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>Cài đặt</Text>
+            </Pressable>
+
+            {Platform.OS === 'web' && (
+              <Pressable
+                style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+                onPress={handleExportPng}
+              >
+                <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>Lưu ảnh</Text>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() => setConfirmClearOpen(true)}
+            >
+              <Text style={[styles.pillBtnText, { color: '#B42318' }]}>Xóa bảng</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Main Freeform Canvas Stage */}
-      <View style={[styles.canvasStage, { minHeight: canvasHeightGuess }]}>
+      <View style={styles.canvasStage}>
         {Platform.OS === 'web' ? (
           <>
             {React.createElement('canvas', {
@@ -3276,14 +3438,20 @@ export function WonderBoardScreen({
               style={[
                 styles.gestureMenu,
                 {
-                  left: Math.max(
-                    16,
-                    selUnionBox.minX * board.viewport.scale + board.viewport.offsetX
-                  ),
+                  left: isPhone
+                    ? Math.min(
+                        Math.max(8, selUnionBox.minX * board.viewport.scale + board.viewport.offsetX),
+                        Math.max(8, winWidth - 260)
+                      )
+                    : Math.max(
+                        16,
+                        selUnionBox.minX * board.viewport.scale + board.viewport.offsetX
+                      ),
                   top: Math.max(
                     12,
                     selUnionBox.minY * board.viewport.scale + board.viewport.offsetY - 50
                   ),
+                  maxWidth: isPhone ? Math.max(240, winWidth - 16) : undefined,
                   backgroundColor: theme.uiSurfaceHex,
                 },
               ]}
@@ -3367,11 +3535,14 @@ export function WonderBoardScreen({
 
         {/* Empty Onboarding Hint */}
         {board.strokes.filter((s) => !s.deleted).length === 0 && (
-          <View style={styles.emptyOverlay} pointerEvents="none">
-            <Text style={[styles.emptyTitle, { color: theme.primaryInkHex }]}>
+          <View
+            style={[styles.emptyOverlay, isPhone && styles.emptyOverlayPhone]}
+            pointerEvents="none"
+          >
+            <Text style={[styles.emptyTitle, isPhone && styles.emptyTitlePhone, { color: theme.primaryInkHex }]}>
               Bảng học tự do SEED Wonder Board
             </Text>
-            <Text style={[styles.emptySub, { color: theme.secondaryInkHex }]}>
+            <Text style={[styles.emptySub, isPhone && styles.emptySubPhone, { color: theme.secondaryInkHex }]}>
               Cầm Apple Pencil hoặc chuột viết tự do ở bất kỳ đâu. Giáo viên AI sẽ lặng lẽ quan sát và từ từ khoanh đám mây phấn cùng lời giải thích trực tiếp ngay trên bảng be.
             </Text>
           </View>
@@ -3379,7 +3550,15 @@ export function WonderBoardScreen({
 
         {/* Board Switcher Dropdown */}
         {showBoardList && (
-          <View style={[styles.floatingPopover, { left: 16, top: 12, backgroundColor: theme.uiSurfaceHex }]}>
+          <View
+            style={[
+              styles.floatingPopover,
+              isPhone
+                ? styles.floatingPopoverPhone
+                : { left: 16, top: 12 },
+              { backgroundColor: theme.uiSurfaceHex },
+            ]}
+          >
             <Text style={[styles.popoverTitle, { color: theme.uiTextHex }]}>
               Các bảng của bạn ({boards.length})
             </Text>
@@ -3414,7 +3593,15 @@ export function WonderBoardScreen({
 
         {/* Explicit Test / Specimen Fixtures Drawer */}
         {showSpecimensDrawer && (
-          <View style={[styles.floatingPopover, { right: 16, top: 12, width: 320, backgroundColor: theme.uiSurfaceHex }]}>
+          <View
+            style={[
+              styles.floatingPopover,
+              isPhone
+                ? styles.floatingPopoverPhone
+                : { right: 16, top: 12, width: 320 },
+              { backgroundColor: theme.uiSurfaceHex },
+            ]}
+          >
             <View style={styles.popoverHeaderRow}>
               <Text style={[styles.popoverTitle, { color: theme.uiTextHex }]}>
                 Mẫu chữ viết thử nghiệm (Fixtures)
@@ -3469,7 +3656,11 @@ export function WonderBoardScreen({
         {/* Settings Drawer: Theme, AI Mode, Chalk Speed, Cursor & Privacy */}
         {showSettingsDrawer && (
           <ScrollView
-            style={[styles.settingsDrawer, { backgroundColor: theme.uiSurfaceHex }]}
+            style={[
+              styles.settingsDrawer,
+              isPhone && styles.settingsDrawerPhone,
+              { backgroundColor: theme.uiSurfaceHex },
+            ]}
             contentContainerStyle={{ gap: 12 }}
           >
             <View style={styles.popoverHeaderRow}>
@@ -3647,7 +3838,15 @@ export function WonderBoardScreen({
 
         {/* Clear Confirmation */}
         {confirmClearOpen && (
-          <View style={[styles.floatingPopover, { right: 20, top: 16, width: 280, backgroundColor: theme.uiSurfaceHex }]}>
+          <View
+            style={[
+              styles.floatingPopover,
+              isPhone
+                ? styles.floatingPopoverPhone
+                : { right: 20, top: 16, width: 280 },
+              { backgroundColor: theme.uiSurfaceHex },
+            ]}
+          >
             <Text style={[styles.popoverTitle, { color: theme.uiTextHex }]}>
               Xóa toàn bộ nét viết trên bảng?
             </Text>
@@ -3669,7 +3868,7 @@ export function WonderBoardScreen({
         )}
 
         {/* Bottom Floating Collapsible Toolbar */}
-        <View style={styles.bottomDock}>
+        <View style={[styles.bottomDock, isPhone && styles.bottomDockPhone]}>
           {latestAmbiguousRegion &&
             !serverHealth?.visionReady &&
             selectedStrokeIds.length === 0 && (
@@ -3831,20 +4030,27 @@ export function WonderBoardScreen({
             </View>
           )}
 
-          <View style={styles.dockMetaRow}>
+          <View
+            style={[
+              styles.dockMetaRow,
+              isPhone && toolbarCollapsed && { alignSelf: 'flex-end' },
+            ]}
+          >
             <Pressable
-              style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+              style={[styles.pillBtn, isPhone && styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
               onPress={() => setToolbarCollapsed((v) => !v)}
             >
-              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
+              <Text style={[styles.pillBtnText, isPhone && styles.pillBtnTextPhone, { color: theme.uiTextHex }]}>
                 {toolbarCollapsed ? 'Mở thanh bút' : 'Thu gọn'}
               </Text>
             </Pressable>
-            <View style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}>
-              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
-                {stylusStatus}
-              </Text>
-            </View>
+            {!isPhone && (
+              <View style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}>
+                <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
+                  {stylusStatus}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
       </View>
@@ -3853,7 +4059,7 @@ export function WonderBoardScreen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, minHeight: 0, overflow: 'hidden' },
   topBar: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -3865,6 +4071,40 @@ const styles = StyleSheet.create({
     gap: 8,
     zIndex: 30,
   },
+  topBarPhone: {
+    flexShrink: 0,
+    paddingHorizontal: 10,
+    paddingTop: 7,
+    paddingBottom: 7,
+    borderBottomWidth: 1,
+    gap: 6,
+    zIndex: 30,
+  },
+  mobileTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  mobileTopLeft: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  mobileTopRight: {
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  mobileActionScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingRight: 12,
+  },
   topLeft: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   topRight: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7 },
   pillBtn: {
@@ -3874,7 +4114,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.08)',
   },
+  pillBtnPhone: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
   pillBtnText: { fontSize: 12, fontWeight: '600' },
+  pillBtnTextPhone: { fontSize: 11.5 },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3888,6 +4133,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 12, fontWeight: '600' },
   canvasStage: {
     flex: 1,
+    minHeight: 0,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -3906,12 +4152,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  emptyOverlayPhone: {
+    top: '20%',
+    left: 16,
+    right: 16,
+    gap: 6,
+  },
   emptyTitle: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
+  emptyTitlePhone: { fontSize: 18 },
   emptySub: {
     fontSize: 14,
     textAlign: 'center',
     maxWidth: 520,
     lineHeight: 21,
+  },
+  emptySubPhone: {
+    fontSize: 13,
+    lineHeight: 19,
   },
   tapActionBar: {
     position: 'absolute',
@@ -3961,6 +4218,13 @@ const styles = StyleSheet.create({
     gap: 8,
     zIndex: 40,
   },
+  floatingPopoverPhone: {
+    left: 10,
+    right: 10,
+    top: 8,
+    width: undefined,
+    maxHeight: '76%',
+  },
   settingsDrawer: {
     position: 'absolute',
     right: 16,
@@ -3972,6 +4236,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DCD2C4',
     zIndex: 45,
+  },
+  settingsDrawerPhone: {
+    left: 10,
+    right: 10,
+    top: 8,
+    width: undefined,
+    maxHeight: '76%',
   },
   popoverHeaderRow: {
     flexDirection: 'row',
@@ -4074,6 +4345,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     zIndex: 35,
+  },
+  bottomDockPhone: {
+    bottom: 8,
+    left: 8,
+    right: 8,
+    gap: 6,
   },
   quickWriteBar: {
     width: '100%',

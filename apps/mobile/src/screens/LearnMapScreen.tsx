@@ -40,6 +40,7 @@ const UNIT1_PREVIEWS: Record<number, string[]> = {
 
 export function LearnMapScreen({ state, onStartSession }: LearnMapScreenProps) {
   const { width } = useWindowDimensions();
+  const isPhone = width < 640;
   const isTwoColLessons = width >= 640;
   const showCompanionRail = width >= 1080;
 
@@ -119,14 +120,19 @@ export function LearnMapScreen({ state, onStartSession }: LearnMapScreenProps) {
   ];
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#FFFFFF' }} contentContainerStyle={styles.outer}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+      contentContainerStyle={[styles.outer, isPhone && styles.outerPhone]}
+    >
       <View style={[styles.workspace, showCompanionRail && styles.workspaceWide]}>
         <View style={styles.mainCol}>
           {/* Minimalist Hero Card */}
-          <View style={styles.heroCard}>
+          <View style={[styles.heroCard, isPhone && styles.heroCardPhone]}>
             <View style={styles.heroTop}>
               <View style={{ flex: 1, gap: 4 }}>
-                <Text style={styles.heroTitle}>Tiếng Hàn Sơ Cấp 1</Text>
+                <Text style={[styles.heroTitle, isPhone && styles.heroTitlePhone]}>
+                  Tiếng Hàn Sơ Cấp 1
+                </Text>
                 <Text style={styles.heroSub}>
                   Ôn tập thông minh và luyện gõ chủ động.
                 </Text>
@@ -348,6 +354,7 @@ export function LearnMapScreen({ state, onStartSession }: LearnMapScreenProps) {
 
 const styles = StyleSheet.create({
   outer: { padding: 24, alignItems: 'center' },
+  outerPhone: { padding: 14, paddingBottom: 24 },
   workspace: { width: '100%', maxWidth: 1120, gap: 24 },
   workspaceWide: { flexDirection: 'row', alignItems: 'flex-start' },
   mainCol: { flex: 1, gap: 28, minWidth: 0 },
@@ -361,6 +368,10 @@ const styles = StyleSheet.create({
     borderColor: '#EAE2D6',
     gap: 18,
   },
+  heroCardPhone: {
+    padding: 16,
+    gap: 14,
+  },
   heroTop: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -369,6 +380,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   heroTitle: { fontSize: 24, fontWeight: '700', color: '#2C221E' },
+  heroTitlePhone: { fontSize: 20 },
   heroSub: { fontSize: 14.5, color: '#6B584B' },
   metricStrip: {
     flexDirection: 'row',

@@ -29,13 +29,13 @@ import { buildMangaCoachingBubble } from './lib/aiTutor';
 
 type TabKey = 'learn' | 'review' | 'dict' | 'stats' | 'chat' | 'board';
 
-const TABS: Array<{ key: TabKey; label: string; badge: BadgeName }> = [
-  { key: 'learn', label: 'Lộ trình', badge: 'sprout' },
-  { key: 'board', label: 'Wonder Board', badge: 'board' },
-  { key: 'review', label: 'Ôn tập', badge: 'brain' },
-  { key: 'dict', label: 'Từ điển', badge: 'book' },
-  { key: 'stats', label: 'Thống kê', badge: 'chart' },
-  { key: 'chat', label: 'Hỏi đáp AI', badge: 'chat' },
+const TABS: Array<{ key: TabKey; label: string; mobileLabel: string; badge: BadgeName }> = [
+  { key: 'learn', label: 'Lộ trình', mobileLabel: 'Lộ trình', badge: 'sprout' },
+  { key: 'board', label: 'Wonder Board', mobileLabel: 'Bảng AI', badge: 'board' },
+  { key: 'review', label: 'Ôn tập', mobileLabel: 'Ôn tập', badge: 'brain' },
+  { key: 'dict', label: 'Từ điển', mobileLabel: 'Từ điển', badge: 'book' },
+  { key: 'stats', label: 'Thống kê', mobileLabel: 'Thống kê', badge: 'chart' },
+  { key: 'chat', label: 'Hỏi đáp AI', mobileLabel: 'Hỏi AI', badge: 'chat' },
 ];
 
 export default function App() {
@@ -212,7 +212,7 @@ export default function App() {
 
           <View style={styles.content}>
             {!isWide && !(activeTab === 'board' && boardFullscreen) && (
-              <View style={styles.mobileHeader}>
+              <View nativeID="seed-mobile-header" style={styles.mobileHeader}>
                 <View style={styles.mobileBrandRow}>
                   <View style={styles.brandMarkSmall}>
                     <Text style={styles.brandMarkTextSmall}>S</Text>
@@ -292,22 +292,22 @@ export default function App() {
               </View>
             )}
 
-            {!isWide && (
-              <View style={styles.bottomBar}>
+            {!isWide && !(activeTab === 'board' && boardFullscreen) && (
+              <View nativeID="seed-mobile-bottom-bar" style={styles.bottomBar}>
                 {TABS.map((t) => {
                   const active = activeTab === t.key;
                   return (
                     <Pressable
                       key={t.key}
-                      style={styles.bottomTab}
+                      style={[styles.bottomTab, active && styles.bottomTabActive]}
                       onPress={() => handleSelectTab(t.key)}
                     >
-                      <GeometricBadge name={t.badge} size={24} />
+                      <GeometricBadge name={t.badge} size={22} />
                       <Text
                         style={[styles.bottomText, active && styles.bottomTextActive]}
                         numberOfLines={1}
                       >
-                        {t.label}
+                        {t.mobileLabel}
                       </Text>
                     </Pressable>
                   );
@@ -330,8 +330,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FFFFFF' },
-  shell: { flex: 1 },
+  root: { flex: 1, minHeight: 0, overflow: 'hidden', backgroundColor: '#FFFFFF' },
+  shell: { flex: 1, minHeight: 0, overflow: 'hidden' },
   shellWide: { flexDirection: 'row' },
   sidebar: {
     width: 236,
@@ -417,13 +417,14 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   statChipText: { fontSize: 12.5, fontWeight: '600', color: '#2C221E' },
-  content: { flex: 1, backgroundColor: '#FFFFFF', zIndex: 1 },
+  content: { flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', backgroundColor: '#FFFFFF', zIndex: 1 },
   mobileHeader: {
     flexDirection: 'row',
+    flexShrink: 0,
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 11,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#EAE4DC',
@@ -443,15 +444,27 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   mobilePillText: { fontSize: 12.5, fontWeight: '600', color: '#2C221E' },
-  screenArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  screenArea: { flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', backgroundColor: '#FFFFFF' },
   bottomBar: {
     flexDirection: 'row',
+    flexShrink: 0,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#EAE4DC',
-    paddingVertical: 8,
+    paddingTop: 6,
+    paddingBottom: 8,
+    paddingHorizontal: 4,
   },
-  bottomTab: { flex: 1, alignItems: 'center', gap: 3 },
+  bottomTab: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  bottomTabActive: {
+    backgroundColor: '#F2F7F3',
+  },
   bottomText: { fontSize: 10.5, fontWeight: '600', color: '#8C7A6B' },
   bottomTextActive: { color: '#2D5D3D', fontWeight: '700' },
   mangaBubbleWrap: {

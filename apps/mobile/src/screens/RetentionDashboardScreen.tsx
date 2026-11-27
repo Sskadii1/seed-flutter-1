@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { computeRetentionTruth } from '@seed/learning-engine';
 import { SUPABASE_MIGRATION_SQL } from '../lib/supabase';
 import { getEffectiveNow, type SeedLearningState } from '../store/learningStore';
@@ -16,6 +16,8 @@ export function RetentionDashboardScreen({
   onRunDemo30Days,
   onResetState,
 }: RetentionDashboardScreenProps) {
+  const { width } = useWindowDimensions();
+  const isPhone = width < 640;
   const [showSql, setShowSql] = useState(false);
   const now = getEffectiveNow(state);
   const cards = Object.values(state.cards);
@@ -26,7 +28,7 @@ export function RetentionDashboardScreen({
   const accuracyPct = Math.round(metrics.firstTryAccuracy * 100);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, isPhone && styles.containerPhone]}>
       <View style={styles.headerCard}>
         <View style={styles.headerTop}>
           <GeometricBadge name="chart" size={34} />
@@ -151,6 +153,7 @@ export function RetentionDashboardScreen({
 
 const styles = StyleSheet.create({
   container: { padding: 24, gap: 16, maxWidth: 960, width: '100%', alignSelf: 'center' },
+  containerPhone: { padding: 14, paddingBottom: 24, gap: 12 },
   headerCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,

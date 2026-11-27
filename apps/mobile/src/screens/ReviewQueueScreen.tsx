@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import {
   buildAdaptiveAiSession,
   getAllExercises,
@@ -17,6 +17,8 @@ interface ReviewQueueScreenProps {
 }
 
 export function ReviewQueueScreen({ state, onStartSession }: ReviewQueueScreenProps) {
+  const { width } = useWindowDimensions();
+  const isPhone = width < 640;
   const now = getEffectiveNow(state);
   const cards = Object.values(state.cards)
     .map((card) => {
@@ -67,7 +69,7 @@ export function ReviewQueueScreen({ state, onStartSession }: ReviewQueueScreenPr
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, isPhone && styles.containerPhone]}>
       <View style={styles.banner}>
         <View style={styles.bannerTop}>
           <GeometricBadge name="brain" size={34} />
@@ -132,6 +134,7 @@ export function ReviewQueueScreen({ state, onStartSession }: ReviewQueueScreenPr
 
 const styles = StyleSheet.create({
   container: { padding: 24, gap: 16, maxWidth: 960, width: '100%', alignSelf: 'center' },
+  containerPhone: { padding: 14, paddingBottom: 24, gap: 12 },
   banner: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
