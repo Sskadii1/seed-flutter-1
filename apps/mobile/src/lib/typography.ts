@@ -6,11 +6,14 @@ export const FONT_SANS =
 export const FONT_HANGUL =
   "'Noto Sans KR', 'Be Vietnam Pro', 'Malgun Gothic', sans-serif";
 
-export const FONT_CHALK =
-  "'Gaegu', 'Nanum Pen Script', 'Be Vietnam Pro', 'Noto Sans KR', sans-serif";
+export const FONT_CHALK_VI =
+  "'Playpen Sans', 'Be Vietnam Pro', sans-serif";
 
 export const FONT_CHALK_KO =
-  "'Gaegu', 'Nanum Pen Script', 'Noto Sans KR', 'Be Vietnam Pro', sans-serif";
+  "'Gaegu', 'Noto Sans KR', sans-serif";
+
+export const FONT_CHALK =
+  "'Playpen Sans', 'Be Vietnam Pro', 'Gaegu', 'Noto Sans KR', sans-serif";
 
 export const WEB_SANS_STYLE = Platform.OS === 'web' ? { fontFamily: FONT_SANS } : {};
 export const WEB_HANGUL_STYLE = Platform.OS === 'web' ? { fontFamily: FONT_HANGUL } : {};
@@ -38,12 +41,19 @@ export function injectWebTypography(): void {
   const doc = (globalThis as unknown as { document?: MinimalDocument }).document;
   if (!doc || !doc.head) return;
 
-  if (!doc.getElementById('seed-google-fonts')) {
+  const fontHref =
+    'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Gaegu:wght@400;700&family=Mali:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&family=Playpen+Sans:wght@500;600;700&display=swap';
+  const existingFontLink = doc.getElementById('seed-google-fonts') as
+    | { id: string; rel?: string; href?: string }
+    | null
+    | undefined;
+  if (existingFontLink) {
+    existingFontLink.href = fontHref;
+  } else {
     const link = doc.createElement('link');
     link.id = 'seed-google-fonts';
     link.rel = 'stylesheet';
-    link.href =
-      'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Gaegu:wght@400;700&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;600;700&display=swap';
+    link.href = fontHref;
     doc.head.appendChild(link);
   }
 
@@ -93,5 +103,46 @@ export function injectWebTypography(): void {
     `;
   if (!existingStyle) {
     doc.head.appendChild(style);
+  }
+}
+
+interface FontFaceSetLike {
+  ready?: Promise<unknown>;
+  load?: (font: string, text?: string) => Promise<unknown[]>;
+  addEventListener?: (ev: string, fn: () => void) => void;
+  removeEventListener?: (ev: string, fn: () => void) => void;
+}
+
+/**
+ * Loads Korean & Vietnamese chalk web fonts and resolves once metrics stabilize
+ * (with a bounded timeout so offline tests never stall).
+ */
+export async function waitForWonderFontsReady(timeoutMs = 1800): Promise<void> {
+  if (Platform.OS !== 'web') return;
+  injectWebTypography();
+  const doc = (globalThis as unknown as { document?: { fonts?: FontFaceSetLike } }).document;
+  const fonts = doc?.fonts;
+  if (!fonts) return;
+
+  const fontSpecs = [
+    "600 18px 'Playpen Sans'",
+    "500 18px 'Be Vietnam Pro'",
+    "700 26px 'Gaegu'",
+    "600 22px 'Noto Sans KR'",
+  ];
+  const sampleKoVi = '아 Âm tiết ㅎ ㅏ [a] → ạ ữ ơ ê đ';
+
+  try {
+    await Promise.race([
+      Promise.all([
+        typeof fonts.load === 'function'
+          ? Promise.allSettled(fontSpecs.map((f) => fonts.load!(f, sampleKoVi)))
+          : Promise.resolve(),
+        fonts.ready ?? Promise.resolve(),
+      ]),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  } catch {
+    // Offline or blocked CDN; safe fallback fonts remain usable
   }
 }

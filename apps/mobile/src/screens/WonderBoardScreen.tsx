@@ -15,6 +15,7 @@ import {
   WonderAiMode,
   WonderAnimationSpeed,
   WonderAnnotation,
+  WonderBBox,
   WonderBoardDocument,
   WonderBoardThemeId,
   WonderGestureIntent,
@@ -29,11 +30,14 @@ import {
 import {
   applyConfirmedUserTranscript,
   buildBoardContextModel,
+  computeAdaptiveAnnotationTypography,
+  computeAnnotationPhaseTimings,
   computeCollisionFreePlacement,
   computeDirtyRegions,
   computeStrokeBoundingBox,
   createEmptyWonderBoard,
   deduplicateWonderAnnotations,
+  estimateFontRunWidthFallback,
   evaluateWonderBoardBenchmarkV3,
   executeGestureQuery,
   findStrokesInPolygon,
@@ -44,15 +48,22 @@ import {
   orchestrateWonderTutor,
   recognizeWithHybridPipeline,
   reconcileAnnotationsWithStrokes,
+  segmentMixedLanguageRuns,
+  segmentUnicodeGraphemes,
   sliceArrowPathAtProgress,
   sliceCloudPathAtProgress,
   sliceHangulDemoAtProgress,
+  sliceMixedLanguageReveal,
   translateStrokes,
+  WonderAnimationPhaseTimings,
+  WonderFontRun,
   WonderRecognitionCache,
+  WonderWrappedTextMetrics,
+  wrapMixedLanguageRuns,
 } from '@seed/learning-engine';
 import { loadAiApiConfig, resolveProvider } from '../lib/aiTutor';
 import { speakKorean } from '../lib/speech';
-import { FONT_CHALK, FONT_SANS } from '../lib/typography';
+import { FONT_CHALK, FONT_SANS, waitForWonderFontsReady } from '../lib/typography';
 import {
   createBrowserVisionProvider,
   renderRegionInkCropDataUrl,
@@ -157,11 +168,114 @@ const GUIDANCE_OPTIONS: Array<{ key: WonderGuidanceLevel; label: string }> = [
 ];
 
 const SPEED_OPTIONS: Array<{ key: WonderAnimationSpeed; label: string; factor: number }> = [
-  { key: 'slow', label: 'Chậm', factor: 1.35 },
+  { key: 'slow', label: 'Chậm', factor: 1.5 },
   { key: 'natural', label: 'Tự nhiên', factor: 1.0 },
-  { key: 'fast', label: 'Nhanh', factor: 0.45 },
+  { key: 'fast', label: 'Nhanh', factor: 0.55 },
   { key: 'instant', label: 'Tức thì', factor: 0 },
 ];
+
+let sharedMeasureCtx: {
+  font: string;
+  measureText(text: string): { width: number };
+} | null | undefined;
+
+function getMeasureCtx() {
+  if (sharedMeasureCtx !== undefined) return sharedMeasureCtx;
+  if (Platform.OS !== 'web') {
+    sharedMeasureCtx = null;
+    return null;
+  }
+  const doc = (globalThis as unknown as {
+    document?: {
+      createElement(tag: string): {
+        getContext(t: '2d'): { font: string; measureText(text: string): { width: number } } | null;
+      };
+    };
+  }).document;
+  if (!doc) {
+    sharedMeasureCtx = null;
+    return null;
+  }
+  const c = doc.createElement('canvas');
+  sharedMeasureCtx = c.getContext('2d');
+  return sharedMeasureCtx;
+}
+
+/**
+ * Measures an explicit font run using Canvas 2D measureText on web (after or during font load),
+ * falling back cleanly to heuristic script widths in Node.
+ */
+function measureFontRunOnWeb(run: WonderFontRun): number {
+  const ctx = getMeasureCtx();
+  if (!ctx) return estimateFontRunWidthFallback(run);
+  ctx.font = `${run.fontWeight} ${run.fontSize}px ${run.fontFamily}`;
+  const rawW = ctx.measureText(run.text).width;
+  const gCount = segmentUnicodeGraphemes(run.text).length;
+  const trackingPx = Math.max(0, gCount - 1) * run.fontSize * run.letterSpacingEm;
+  return rawW + trackingPx;
+}
+
+interface ResolvedAnnotationVisualLayout {
+  noteBox: WonderBBox;
+  placement: WonderAnnotation['placement_preference'];
+  arrow: WonderAnnotation['arrow_path'];
+  cloud: ReturnType<typeof generateScallopedCloudGeometry>;
+  headerFontSize: number;
+  explFontSize: number;
+  explLineHeight: number;
+  explGapTop: number;
+  headerMetrics: WonderWrappedTextMetrics;
+  explMetrics: WonderWrappedTextMetrics;
+  textBaseX: number;
+  textBaseY: number;
+}
+
+function sliceWrappedLinesByVisibleText(
+  fullLines: string[],
+  visibleText: string
+): string[] {
+  const visibleCount = segmentUnicodeGraphemes(visibleText).length;
+  if (visibleCount <= 0) return [];
+  const out: string[] = [];
+  let remaining = visibleCount;
+  for (const line of fullLines) {
+    if (remaining <= 0) break;
+    const gs = segmentUnicodeGraphemes(line);
+    if (gs.length <= remaining) {
+      out.push(line);
+      remaining -= gs.length + 1; // account for space separator between wrapped lines
+    } else {
+      out.push(gs.slice(0, remaining).join(''));
+      remaining = 0;
+    }
+  }
+  return out;
+}
+
+function renderRunTspans(
+  lineText: string,
+  role: 'correction' | 'explanation',
+  baseFontSize: number
+): React.ReactNode[] {
+  const runs = segmentMixedLanguageRuns(lineText, role, baseFontSize);
+  let prevShiftEm = 0;
+  return runs.map((run, idx) => {
+    const deltaShiftPx = Number(((run.baselineShiftEm - prevShiftEm) * baseFontSize).toFixed(2));
+    prevShiftEm = run.baselineShiftEm;
+    return React.createElement(
+      'tspan',
+      {
+        key: `${idx}_${run.script}`,
+        fontFamily: run.fontFamily,
+        fontSize: run.fontSize,
+        fontWeight: run.fontWeight,
+        letterSpacing: `${(run.letterSpacingEm * run.fontSize).toFixed(2)}px`,
+        dy: idx === 0 && run.baselineShiftEm === 0 ? undefined : deltaShiftPx !== 0 ? deltaShiftPx : undefined,
+      },
+      run.text
+    );
+  });
+}
 
 function getTeacherStateLabel(st: WonderTeacherState): string {
   switch (st) {
@@ -191,32 +305,16 @@ function getTeacherStateLabel(st: WonderTeacherState): string {
   }
 }
 
-/**
- * Splits text into grapheme clusters safely (never cuts Vietnamese tone diacritics
- * or Hangul syllable blocks mid-character during progressive handwriting reveal).
- */
-function segmentGraphemes(text: string): string[] {
-  const intlAny = Intl as unknown as {
-    Segmenter?: new (
-      locale: string,
-      opts: { granularity: string }
-    ) => { segment(s: string): Iterable<{ segment: string }> };
-  };
-  if (typeof intlAny.Segmenter === 'function') {
-    const seg = new intlAny.Segmenter('vi', { granularity: 'grapheme' });
-    return Array.from(seg.segment(text), (x) => x.segment);
-  }
-  return Array.from(text);
-}
-
 function wrapChalkText(text: string, maxChars = 28): string[] {
-  const words = text.trim().split(/\s+/);
+  const normalized = text.normalize('NFC').trim();
+  if (!normalized) return [];
+  const words = normalized.split(/\s+/);
   const lines: string[] = [];
   let curr = '';
   for (const w of words) {
     if (!curr) {
       curr = w;
-    } else if (curr.length + 1 + w.length <= maxChars) {
+    } else if (segmentUnicodeGraphemes(curr).length + 1 + segmentUnicodeGraphemes(w).length <= maxChars) {
       curr += ` ${w}`;
     } else {
       lines.push(curr);
@@ -340,9 +438,166 @@ interface ChalkOverlayProps {
   selectedStrokeIds: string[];
   animOverrideMap: Record<string, LiveAnimProgress>;
   selectedNoteId: string | null;
+  activeWritingBox: WonderBBox | null;
+  fontEpoch: number;
+  resolvedLayoutByAnnId: Record<string, ResolvedAnnotationVisualLayout>;
   onSelectNote: (id: string | null) => void;
   onAnnotationPhaseCompleted: (annId: string) => void;
   onTeacherStateHint: (state: WonderTeacherState) => void;
+  onAnimationTimingsObserved?: (
+    annId: string,
+    timings: WonderAnimationPhaseTimings,
+    actualCloudMs?: number,
+    actualTextMs?: number
+  ) => void;
+  onExposeOverlayHelpers?: (helpers: {
+    getAnimationTimings: () => Record<
+      string,
+      WonderAnimationPhaseTimings & { actualCloudMs?: number; actualTextMs?: number }
+    >;
+    skipAnnotationAnim: (annId: string) => void;
+  }) => void;
+}
+
+function buildResolvedAnnotationLayouts(
+  board: WonderBoardDocument,
+  activeAnnotations: WonderAnnotation[],
+  activeWritingBox: WonderBBox | null
+): Record<string, ResolvedAnnotationVisualLayout> {
+  const layoutMap: Record<string, ResolvedAnnotationVisualLayout> = {};
+  const wordBoxes = board.regions.flatMap((r) => r.spans.map((sp) => sp.bbox));
+  const strokeBoxes = board.strokes.filter((s) => !s.deleted).map((s) => s.bbox);
+  const teachingBoxes = board.teachingCards.map((c) => c.geometry);
+  const placedClouds: WonderBBox[] = [];
+  const placedNotes: WonderBBox[] = [];
+  const vScale = Math.max(0.35, board.viewport.scale || 1);
+
+  for (const ann of activeAnnotations) {
+    const neighbors = wordBoxes.filter(
+      (wb) =>
+        Math.abs(wb.minX - ann.target_geometry.minX) > 4 ||
+        Math.abs(wb.minY - ann.target_geometry.minY) > 4
+    );
+    const cloud = generateScallopedCloudGeometry(
+      ann.target_geometry,
+      ann.cloud_seed ?? 1,
+      neighbors
+    );
+    placedClouds.push(cloud.outerBounds);
+  }
+
+  for (let i = 0; i < activeAnnotations.length; i++) {
+    const ann = activeAnnotations[i];
+    const cloud = generateScallopedCloudGeometry(
+      ann.target_geometry,
+      ann.cloud_seed ?? 1,
+      wordBoxes.filter(
+        (wb) =>
+          Math.abs(wb.minX - ann.target_geometry.minX) > 4 ||
+          Math.abs(wb.minY - ann.target_geometry.minY) > 4
+      )
+    );
+
+    if (ann.visual_style.shape === 'chalk_tick') {
+      layoutMap[ann.annotation_id] = {
+        noteBox: ann.note_geometry,
+        placement: ann.placement_preference,
+        arrow: ann.arrow_path,
+        cloud,
+        headerFontSize: 20,
+        explFontSize: 16,
+        explLineHeight: 24,
+        explGapTop: 24,
+        headerMetrics: wrapMixedLanguageRuns('잘했어요!', 'correction', 20, 200, 1.35, measureFontRunOnWeb, 1),
+        explMetrics: { lines: [], maxWidth: 0, totalHeight: 0, lineHeight: 24 },
+        textBaseX: ann.note_geometry.minX + 6,
+        textBaseY: ann.note_geometry.minY + 22,
+      };
+      placedNotes.push(ann.note_geometry);
+      continue;
+    }
+
+    const typo = computeAdaptiveAnnotationTypography(ann.target_geometry.height, vScale);
+    const corrLabel =
+      ann.severity === 'error' && ann.suggested_correction
+        ? `${ann.target_text} → ${ann.suggested_correction}`
+        : ann.suggested_correction || ann.target_text;
+
+    const headerFontSize = typo.correctionWorldPx;
+    const explFontSize = typo.explanationWorldPx;
+    const explLineHeight = typo.explLineHeightWorldPx;
+    const explGapTop = typo.explGapTopWorldPx;
+
+    const headerMetrics = wrapMixedLanguageRuns(
+      corrLabel,
+      'correction',
+      headerFontSize,
+      Math.max(typo.maxLineWidthWorldPx + 40, 320),
+      1.32,
+      measureFontRunOnWeb,
+      2
+    );
+    const explMetrics = wrapMixedLanguageRuns(
+      ann.explanation,
+      'explanation',
+      explFontSize,
+      typo.maxLineWidthWorldPx,
+      typo.lineHeightRatio,
+      measureFontRunOnWeb,
+      8
+    );
+
+    const measuredWidth = Math.max(
+      210,
+      Math.ceil(Math.max(headerMetrics.maxWidth, explMetrics.maxWidth) + 20)
+    );
+    const headerBlockH = Math.max(headerFontSize * 1.32, headerMetrics.totalHeight);
+    const measuredHeight = Math.max(
+      Math.round(headerBlockH + (explMetrics.lines.length > 0 ? explMetrics.totalHeight + 22 : 12)),
+      64
+    );
+
+    const otherClouds = placedClouds.filter((_, idx) => idx !== i);
+    const occupied = [
+      ...strokeBoxes,
+      ...otherClouds,
+      ...placedNotes,
+      ...teachingBoxes,
+    ];
+
+    const placed = computeCollisionFreePlacement({
+      targetBox: ann.target_geometry,
+      desiredWidth: measuredWidth,
+      desiredHeight: measuredHeight,
+      preferredOrder: [ann.placement_preference, 'below', 'right', 'above', 'left'],
+      occupiedBoxes: occupied,
+      activeWritingBox,
+      safeGap: typo.safeGapWorldPx,
+      maxWorldRight: Math.max(1080, ann.target_geometry.maxX + measuredWidth + 140),
+      cloudSeed: ann.cloud_seed ?? 1,
+    });
+
+    placedNotes.push(placed.noteBox);
+    const textBaseX = placed.noteBox.minX + 8;
+    const textBaseY = placed.noteBox.minY + Math.round(headerFontSize * 1.08);
+
+    layoutMap[ann.annotation_id] = {
+      noteBox: placed.noteBox,
+      placement: placed.placement,
+      arrow: placed.arrow,
+      cloud,
+      headerFontSize,
+      explFontSize,
+      explLineHeight,
+      explGapTop,
+      headerMetrics,
+      explMetrics,
+      textBaseX,
+      textBaseY,
+    };
+  }
+
+  return layoutMap;
 }
 
 const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
@@ -353,51 +608,59 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
   selectedStrokeIds,
   animOverrideMap,
   selectedNoteId,
+  activeWritingBox,
+  fontEpoch,
+  resolvedLayoutByAnnId,
   onSelectNote,
   onAnnotationPhaseCompleted,
   onTeacherStateHint,
+  onAnimationTimingsObserved,
+  onExposeOverlayHelpers,
 }: ChalkOverlayProps) {
   const [liveMap, setLiveMap] = useState<Record<string, LiveAnimProgress>>({});
   const animRef = useRef<Record<string, LiveAnimProgress>>({});
+  const timingsRef = useRef<
+    Record<
+      string,
+      WonderAnimationPhaseTimings & {
+        startedAtMs: number;
+        cloudDoneAtMs?: number;
+        actualCloudMs?: number;
+        actualTextMs?: number;
+      }
+    >
+  >({});
   const lastFrameMsRef = useRef<number>(Date.now());
   const pauseAccRef = useRef<Record<string, number>>({});
-
-  const prefersReducedMotion = useMemo(() => {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() => {
     const g = globalThis as unknown as {
       matchMedia?: (q: string) => { matches: boolean };
     };
     return typeof g.matchMedia === 'function'
       ? g.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false;
+  });
+
+  useEffect(() => {
+    const g = globalThis as unknown as {
+      matchMedia?: (q: string) => {
+        matches: boolean;
+        addEventListener?: (ev: string, fn: (e: { matches: boolean }) => void) => void;
+        removeEventListener?: (ev: string, fn: (e: { matches: boolean }) => void) => void;
+      };
+    };
+    if (typeof g.matchMedia !== 'function') return;
+    const mq = g.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(mq.matches);
+    const onChange = (e: { matches: boolean }) => setPrefersReducedMotion(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
   }, []);
 
   const activeAnnotations = useMemo(
     () => board.annotations.filter((a) => a.status === 'active'),
     [board.annotations]
   );
-
-  // Neighboring word boxes from regions so clouds adapt cleanly around adjacent words
-  const wordBoxes = useMemo(
-    () => board.regions.flatMap((r) => r.spans.map((sp) => sp.bbox)),
-    [board.regions]
-  );
-
-  const cloudByAnnId = useMemo(() => {
-    const map: Record<string, ReturnType<typeof generateScallopedCloudGeometry>> = {};
-    for (const ann of activeAnnotations) {
-      const neighbors = wordBoxes.filter(
-        (wb) =>
-          Math.abs(wb.minX - ann.target_geometry.minX) > 4 ||
-          Math.abs(wb.minY - ann.target_geometry.minY) > 4
-      );
-      map[ann.annotation_id] = generateScallopedCloudGeometry(
-        ann.target_geometry,
-        ann.cloud_seed ?? 1,
-        neighbors
-      );
-    }
-    return map;
-  }, [activeAnnotations, wordBoxes]);
 
   const selUnionBox = useMemo(() => {
     if (selectedStrokeIds.length === 0) return null;
@@ -408,7 +671,33 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
     return boxes.length > 0 ? mergeBoundingBoxes(boxes) : null;
   }, [board.strokes, selectedStrokeIds]);
 
-  // Initialize entries for queued/completed annotations
+  const skipAnnotationAnim = (annId: string) => {
+    const cur = animRef.current[annId];
+    if (cur && !cur.completed) {
+      animRef.current = {
+        ...animRef.current,
+        [annId]: {
+          cloud: 1,
+          arrow: 1,
+          correction: 1,
+          explanation: 1,
+          phase: 'done',
+          completed: true,
+        },
+      };
+      setLiveMap(animRef.current);
+      onAnnotationPhaseCompleted(annId);
+    }
+  };
+
+  useEffect(() => {
+    onExposeOverlayHelpers?.({
+      getAnimationTimings: () => ({ ...timingsRef.current }),
+      skipAnnotationAnim,
+    });
+  });
+
+  // Initialize entries for queued/completed annotations (never reset completed/active progress on font load or new strokes)
   useEffect(() => {
     const nextMap = { ...animRef.current };
     let changed = false;
@@ -417,18 +706,29 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
     for (const id of Object.keys(nextMap)) {
       if (!activeIds.has(id)) {
         delete nextMap[id];
+        delete timingsRef.current[id];
         changed = true;
       }
     }
 
+    const g = globalThis as unknown as {
+      matchMedia?: (q: string) => { matches: boolean };
+    };
+    const reducedNow =
+      prefersReducedMotion ||
+      (typeof g.matchMedia === 'function'
+        ? g.matchMedia('(prefers-reduced-motion: reduce)').matches
+        : false);
+
     const newlyInstantCompletedIds: string[] = [];
     for (const ann of activeAnnotations) {
-      if (!nextMap[ann.annotation_id]) {
+      const existing = nextMap[ann.annotation_id];
+      const forceInstantNow = board.animationSpeed === 'instant' || reducedNow;
+      if (!existing || (forceInstantNow && !existing.completed)) {
         const alreadyDone =
           ann.animation_progress?.completed ||
           ann.lifecycle_state === 'completed' ||
-          board.animationSpeed === 'instant' ||
-          prefersReducedMotion;
+          forceInstantNow;
         nextMap[ann.annotation_id] = alreadyDone
           ? {
             cloud: 1,
@@ -468,46 +768,71 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
     }
   }, [activeAnnotations, board.animationSpeed, prefersReducedMotion, onAnnotationPhaseCompleted]);
 
-  // Single-teacher sequential animation loop (one piece of chalk at a time!)
+  // Single-teacher sequential animation loop (priority-aware adaptive queue, latched durations)
   useEffect(() => {
     if (Platform.OS !== 'web' || !board.showAnnotations || !board.aiEnabled) return;
 
     const g = globalThis as unknown as {
       requestAnimationFrame?: (cb: (t: number) => void) => number;
       cancelAnimationFrame?: (id: number) => void;
+      matchMedia?: (q: string) => { matches: boolean };
     };
     if (typeof g.requestAnimationFrame !== 'function') return;
 
-    const hasPending = activeAnnotations.some(
+    const incompleteList = activeAnnotations.filter(
       (a) => !animRef.current[a.annotation_id]?.completed && !animOverrideMap[a.annotation_id]
     );
-    if (!hasPending) return;
-
-    const speedFactor =
-      SPEED_OPTIONS.find((s) => s.key === board.animationSpeed)?.factor ?? 1.0;
+    if (incompleteList.length === 0) return;
 
     let rafId = 0;
     lastFrameMsRef.current = Date.now();
 
     const step = () => {
       const now = Date.now();
-      const dt = Math.min(80, Math.max(8, now - lastFrameMsRef.current));
+      const dt = Math.min(80, Math.max(6, now - lastFrameMsRef.current));
       lastFrameMsRef.current = now;
 
-      // Pick the first incomplete annotation in strict sequential order
-      const currentAnn = activeAnnotations.find(
+      const reducedNow =
+        prefersReducedMotion ||
+        (typeof g.matchMedia === 'function'
+          ? g.matchMedia('(prefers-reduced-motion: reduce)').matches
+          : false);
+
+      const pending = activeAnnotations.filter(
         (a) => !animRef.current[a.annotation_id]?.completed && !animOverrideMap[a.annotation_id]
       );
-
-      if (!currentAnn) {
+      if (pending.length === 0) {
         onTeacherStateHint('WAITING_FOR_LEARNER');
         return;
       }
 
-      const id = currentAnn.annotation_id;
-      const cur = { ...(animRef.current[id] ?? { cloud: 0, arrow: 0, correction: 0, explanation: 0, phase: 'cloud' as const, completed: false }) };
+      const orderedPending =
+        pending.length > 6
+          ? [...pending].sort((a, b) => {
+              const pa = a.severity === 'error' ? 0 : 1;
+              const pb = b.severity === 'error' ? 0 : 1;
+              return pa - pb || a.created_at - b.created_at;
+            })
+          : pending;
 
-      if (speedFactor === 0 || prefersReducedMotion) {
+      const inProgress = pending.find((a) => {
+        const st = animRef.current[a.annotation_id];
+        return st && !st.completed && (st.cloud > 0 || st.arrow > 0 || st.correction > 0 || st.explanation > 0);
+      });
+      const currentAnn = inProgress ?? orderedPending[0];
+      const id = currentAnn.annotation_id;
+      const cur = {
+        ...(animRef.current[id] ?? {
+          cloud: 0,
+          arrow: 0,
+          correction: 0,
+          explanation: 0,
+          phase: 'cloud' as const,
+          completed: false,
+        }),
+      };
+
+      if (board.animationSpeed === 'instant' || reducedNow) {
         animRef.current = {
           ...animRef.current,
           [id]: {
@@ -521,31 +846,53 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
         };
         setLiveMap(animRef.current);
         onAnnotationPhaseCompleted(id);
+        rafId = g.requestAnimationFrame!(step);
         return;
       }
 
-      const cloudGeo = cloudByAnnId[id];
-      const cloudDurationMs =
-        Math.max(3200, Math.min(6800, ((cloudGeo?.totalLength ?? 320) / 260) * 3400)) *
-        speedFactor;
-      const arrowDurationMs = 920 * speedFactor;
-      const pauseDurationMs = 240 * speedFactor;
-      const corrDurationMs =
-        Math.max(450, segmentGraphemes(currentAnn.suggested_correction || currentAnn.target_text).length * 85) *
-        speedFactor;
-      const explDurationMs =
-        Math.max(900, segmentGraphemes(currentAnn.explanation).length * 28) * speedFactor;
+      if (!timingsRef.current[id]) {
+        const layout = resolvedLayoutByAnnId[id];
+        const arrowPath = layout?.arrow ?? currentAnn.arrow_path;
+        const arrowLen = Math.hypot(arrowPath.toX - arrowPath.fromX, arrowPath.toY - arrowPath.fromY);
+        const corrText =
+          currentAnn.severity === 'error' && currentAnn.suggested_correction
+            ? `${currentAnn.target_text} → ${currentAnn.suggested_correction}`
+            : currentAnn.suggested_correction || currentAnn.target_text;
+        const computed = computeAnnotationPhaseTimings({
+          cloudPathLengthWorld: layout?.cloud.totalLength ?? 480,
+          viewportScale: board.viewport.scale || 1,
+          arrowLengthWorld: arrowLen,
+          correctionText: corrText,
+          explanationText: currentAnn.explanation,
+          speed: board.animationSpeed,
+          pendingCount: pending.length,
+        });
+        timingsRef.current[id] = {
+          ...computed,
+          startedAtMs: now,
+        };
+      }
+
+      const sched = timingsRef.current[id];
+      const cloudDurationMs = Math.max(120, sched.cloudMs);
+      const pause1DurationMs = Math.max(20, sched.pauseAfterCloudMs);
+      const arrowDurationMs = Math.max(100, sched.arrowMs);
+      const pause2DurationMs = Math.max(20, sched.pauseBeforeExplMs);
+      const corrDurationMs = Math.max(100, sched.corrMs);
+      const explDurationMs = Math.max(160, sched.explMs);
 
       if (cur.phase === 'cloud') {
         onTeacherStateHint('DRAWING_CLOUD');
         cur.cloud = Math.min(1, cur.cloud + dt / cloudDurationMs);
         if (cur.cloud >= 1) {
+          sched.cloudDoneAtMs = now;
+          sched.actualCloudMs = now - sched.startedAtMs;
           cur.phase = 'pause1';
           pauseAccRef.current[id] = 0;
         }
       } else if (cur.phase === 'pause1') {
         pauseAccRef.current[id] = (pauseAccRef.current[id] ?? 0) + dt;
-        if (pauseAccRef.current[id] >= pauseDurationMs) {
+        if (pauseAccRef.current[id] >= pause1DurationMs) {
           cur.phase = 'arrow';
         }
       } else if (cur.phase === 'arrow') {
@@ -557,7 +904,7 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
         }
       } else if (cur.phase === 'pause2') {
         pauseAccRef.current[id] = (pauseAccRef.current[id] ?? 0) + dt;
-        if (pauseAccRef.current[id] >= pauseDurationMs) {
+        if (pauseAccRef.current[id] >= pause2DurationMs) {
           cur.phase = 'correction';
         }
       } else if (cur.phase === 'correction') {
@@ -572,8 +919,12 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
         if (cur.explanation >= 1) {
           cur.phase = 'done';
           cur.completed = true;
+          const totalActual = now - sched.startedAtMs;
+          const actualText = Math.max(0, totalActual - (sched.actualCloudMs ?? sched.cloudMs));
+          sched.actualTextMs = actualText;
           animRef.current = { ...animRef.current, [id]: cur };
           setLiveMap(animRef.current);
+          onAnimationTimingsObserved?.(id, sched, sched.actualCloudMs, actualText);
           onAnnotationPhaseCompleted(id);
           rafId = g.requestAnimationFrame!(step);
           return;
@@ -595,10 +946,13 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
     board.aiEnabled,
     board.animationSpeed,
     board.showAnnotations,
-    cloudByAnnId,
+    board.viewport.scale,
+    fontEpoch,
+    onAnimationTimingsObserved,
     onAnnotationPhaseCompleted,
     onTeacherStateHint,
     prefersReducedMotion,
+    resolvedLayoutByAnnId,
   ]);
 
   if (Platform.OS !== 'web') return null;
@@ -637,24 +991,22 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
               completed: Boolean(ann.animation_progress?.completed),
             };
 
-            const cloudGeo = cloudByAnnId[ann.annotation_id];
+            const layout = resolvedLayoutByAnnId[ann.annotation_id];
+            const cloudGeo = layout?.cloud;
             const cloudSlice = cloudGeo
               ? sliceCloudPathAtProgress(cloudGeo, anim.cloud)
               : { pathData: '', headX: 0, headY: 0, headAngle: 0, isClosed: false };
-            const arrowSlice = sliceArrowPathAtProgress(ann.arrow_path, anim.arrow);
+            const resolvedArrow = layout?.arrow ?? ann.arrow_path;
+            const arrowSlice = sliceArrowPathAtProgress(resolvedArrow, anim.arrow);
             const accent = ann.visual_style.accentColor;
 
             const corrLabel =
               ann.severity === 'error' && ann.suggested_correction
                 ? `${ann.target_text} → ${ann.suggested_correction}`
                 : ann.suggested_correction || ann.target_text;
-            const corrGraphemes = segmentGraphemes(corrLabel);
-            const visibleCorr = corrGraphemes
-              .slice(0, Math.ceil(corrGraphemes.length * anim.correction))
-              .join('');
+            const visibleCorr = sliceMixedLanguageReveal(corrLabel, anim.correction, false);
 
             const vScale = Math.max(0.35, board.viewport.scale || 1);
-            const zoomTextComp = vScale < 0.9 ? Math.min(1.5, 1 / Math.pow(vScale, 0.48)) : 1;
             const zoomStrokeComp =
               vScale < 1
                 ? Math.min(1.85, 1 / Math.pow(vScale, 0.65))
@@ -664,32 +1016,22 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
             const cloudStrokeW = Number((3.4 * zoomStrokeComp * sizeStrokeComp).toFixed(2));
             const arrowStrokeW = Number((2.6 * zoomStrokeComp * sizeStrokeComp).toFixed(2));
 
-            const rawCorrSize = Math.round(
-              Math.max(22, Math.min(54, targetH * 0.42)) * zoomTextComp
-            );
-            const noteWidth = Math.max(
-              300,
-              ann.note_geometry.width || 340,
-              Math.min(480, Math.round(targetH * 1.32))
-            );
-            const maxHeaderSizeForBox = Math.max(
-              22,
-              Math.floor((noteWidth * 1.02) / Math.max(7, corrLabel.length * 0.54))
-            );
-            const headerFontSize = Math.min(rawCorrSize, maxHeaderSizeForBox);
-            const explFontSize = Math.max(16, Math.min(28, Math.round(headerFontSize * 0.62)));
-            const explLineHeight = Math.round(explFontSize * 1.38);
-            const explGapTop = Math.round(explFontSize * 1.55);
+            const headerFontSize = layout?.headerFontSize ?? 26;
+            const explFontSize = layout?.explFontSize ?? 18;
+            const explLineHeight = layout?.explLineHeight ?? 27;
+            const explGapTop = layout?.explGapTop ?? 32;
 
-            const explWrapCols = Math.max(
-              20,
-              Math.floor((noteWidth * 1.0) / Math.max(8, explFontSize * 0.52))
-            );
-            const explGraphemes = segmentGraphemes(ann.explanation);
-            const visibleExpl = explGraphemes
-              .slice(0, Math.ceil(explGraphemes.length * anim.explanation))
-              .join('');
-            const explLines = visibleExpl ? wrapChalkText(visibleExpl, explWrapCols) : [];
+            const fullHeaderLines = layout?.headerMetrics.lines.map((l) => l.text) ?? [corrLabel];
+            const visibleHeaderLines = visibleCorr
+              ? sliceWrappedLinesByVisibleText(fullHeaderLines, visibleCorr)
+              : [];
+
+            const visibleExpl = sliceMixedLanguageReveal(ann.explanation, anim.explanation, true);
+            const fullExplLines =
+              layout?.explMetrics.lines.map((l) => l.text) ?? wrapChalkText(ann.explanation, 28);
+            const explLines = visibleExpl
+              ? sliceWrappedLinesByVisibleText(fullExplLines, visibleExpl)
+              : [];
 
             const showCursor =
               board.chalkCursorEnabled &&
@@ -701,8 +1043,17 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
               ((anim.cloud < 0.999 ? cloudSlice.headAngle : arrowSlice.headAngle) * 180) /
               Math.PI;
 
-            const textBaseX = ann.note_geometry.minX + 6;
-            const textBaseY = ann.note_geometry.minY + Math.round(headerFontSize * 1.05);
+            const textBaseX = layout?.textBaseX ?? ann.note_geometry.minX + 8;
+            const textBaseY =
+              layout?.textBaseY ?? ann.note_geometry.minY + Math.round(headerFontSize * 1.08);
+
+            const handleAnnClick = () => {
+              if (!anim.completed && !override) {
+                skipAnnotationAnim(ann.annotation_id);
+                return;
+              }
+              onSelectNote(selectedNoteId === ann.annotation_id ? null : ann.annotation_id);
+            };
 
             if (ann.visual_style.shape === 'chalk_tick') {
               return React.createElement(
@@ -725,17 +1076,21 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
                 React.createElement(
                   'text',
                   {
+                    'data-testid': `chalk-corr-${ann.annotation_id}`,
                     x: textBaseX,
                     y: textBaseY,
                     fill: accent,
-                    fontSize: 19,
+                    fontSize: 20,
                     fontWeight: '700',
                     fontFamily: FONT_CHALK,
                   },
-                  '잘했어요!'
+                  renderRunTspans('잘했어요!', 'correction', 20)
                 )
               );
             }
+
+            const headerBlockHeight =
+              Math.max(1, visibleHeaderLines.length) * Math.round(headerFontSize * 1.32);
 
             return React.createElement(
               'g',
@@ -768,8 +1123,10 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
                 strokeWidth: cloudStrokeW,
                 strokeLinecap: 'round',
                 strokeLinejoin: 'round',
+                style: { pointerEvents: 'stroke', cursor: 'pointer' },
+                onClick: handleAnnClick,
               }),
-              // Curved continuous chalk arrow
+              // Curved continuous chalk arrow (guaranteed outside note box)
               arrowSlice.shaftPath.length > 0 &&
               React.createElement('path', {
                 'data-testid': `arrow-path-${ann.annotation_id}`,
@@ -782,6 +1139,7 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
               }),
               arrowSlice.headPath.length > 0 &&
               React.createElement('path', {
+                'data-testid': `arrow-head-${ann.annotation_id}`,
                 d: arrowSlice.headPath,
                 fill: 'none',
                 stroke: accent,
@@ -790,43 +1148,48 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
                 strokeLinecap: 'round',
                 strokeLinejoin: 'round',
               }),
-              // Direct-on-canvas chalk correction (handwritten Gaegu/Nanum Pen font)
-              visibleCorr.length > 0 &&
-              React.createElement(
-                'text',
-                {
-                  'data-testid': `chalk-corr-${ann.annotation_id}`,
-                  x: textBaseX,
-                  y: textBaseY,
-                  fill: accent,
-                  fontSize: headerFontSize,
-                  fontWeight: '700',
-                  fontFamily: FONT_CHALK,
-                  style: { pointerEvents: 'auto', cursor: 'pointer' },
-                  onClick: () =>
-                    onSelectNote(selectedNoteId === ann.annotation_id ? null : ann.annotation_id),
-                },
-                visibleCorr
+              // Direct-on-canvas language-aware correction lines with normalized <tspan> font runs
+              visibleHeaderLines.map((hLine, hIdx) =>
+                React.createElement(
+                  'text',
+                  {
+                    key: `h_${hIdx}`,
+                    'data-testid': hIdx === 0 ? `chalk-corr-${ann.annotation_id}` : undefined,
+                    x: textBaseX,
+                    y: textBaseY + hIdx * Math.round(headerFontSize * 1.32),
+                    fill: accent,
+                    fontSize: headerFontSize,
+                    fontWeight: '700',
+                    fontFamily: FONT_CHALK,
+                    style: { pointerEvents: 'auto', cursor: 'pointer' },
+                    onClick: handleAnnClick,
+                  },
+                  renderRunTspans(hLine, 'correction', headerFontSize)
+                )
               ),
-              // Direct-on-canvas handwritten-style concise Vietnamese explanation lines (no box card!)
+              // Direct-on-canvas readable mixed-language explanation lines with explicit <tspan> runs
               explLines.map((line, lineIdx) =>
                 React.createElement(
                   'text',
                   {
-                    key: lineIdx,
+                    key: `e_${lineIdx}`,
                     'data-testid':
                       lineIdx === 0 ? `chalk-expl-${ann.annotation_id}` : undefined,
                     x: textBaseX,
-                    y: textBaseY + explGapTop + lineIdx * explLineHeight,
+                    y:
+                      textBaseY +
+                      headerBlockHeight -
+                      Math.round(headerFontSize * 0.45) +
+                      explGapTop +
+                      lineIdx * explLineHeight,
                     fill: theme.primaryInkHex,
                     fontSize: explFontSize,
-                    fontWeight: '600',
+                    fontWeight: '500',
                     fontFamily: FONT_CHALK,
                     style: { pointerEvents: 'auto', cursor: 'pointer' },
-                    onClick: () =>
-                      onSelectNote(selectedNoteId === ann.annotation_id ? null : ann.annotation_id),
+                    onClick: handleAnnClick,
                   },
-                  line
+                  renderRunTspans(line, 'explanation', explFontSize)
                 )
               ),
               // Small oriented chalk nib while teacher is actively drawing
@@ -983,10 +1346,9 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
         (() => {
           const ann = activeAnnotations.find((a) => a.annotation_id === selectedNoteId);
           if (!ann) return null;
-          const left =
-            ann.note_geometry.minX * board.viewport.scale + board.viewport.offsetX;
-          const top =
-            (ann.note_geometry.minY - 38) * board.viewport.scale + board.viewport.offsetY;
+          const noteGeo = resolvedLayoutByAnnId[ann.annotation_id]?.noteBox ?? ann.note_geometry;
+          const left = noteGeo.minX * board.viewport.scale + board.viewport.offsetX;
+          const top = (noteGeo.minY - 38) * board.viewport.scale + board.viewport.offsetY;
           return (
             <View
               style={[
@@ -1060,11 +1422,65 @@ export function WonderBoardScreen({
   const [palmGuardEnabled, setPalmGuardEnabled] = useState<boolean>(true);
   const [lastPenTime, setLastPenTime] = useState<number>(0);
   const [animOverrideMap, setAnimOverrideMap] = useState<Record<string, LiveAnimProgress>>({});
+  const [fontEpoch, setFontEpoch] = useState<number>(0);
+  const [activeWritingBox, setActiveWritingBox] = useState<WonderBBox | null>(null);
+  const lastFeedbackStartMsRef = useRef<number>(Date.now());
+  const overlayHelpersRef = useRef<{
+    getAnimationTimings: () => Record<
+      string,
+      WonderAnimationPhaseTimings & { actualCloudMs?: number; actualTextMs?: number }
+    >;
+    skipAnnotationAnim: (annId: string) => void;
+  } | null>(null);
   const [recognitionDiagnostics, setRecognitionDiagnostics] = useState<
     WonderRecognitionDiagnosticEntry[]
   >([]);
   const recognitionDiagnosticsRef = useRef<WonderRecognitionDiagnosticEntry[]>([]);
   recognitionDiagnosticsRef.current = recognitionDiagnostics;
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    let mounted = true;
+    const gDoc = (globalThis as unknown as {
+      document?: {
+        fonts?: {
+          addEventListener?: (ev: string, fn: () => void) => void;
+          removeEventListener?: (ev: string, fn: () => void) => void;
+        };
+      };
+    }).document;
+    const onLoadingDone = () => {
+      if (mounted) setFontEpoch((e) => e + 1);
+    };
+    gDoc?.fonts?.addEventListener?.('loadingdone', onLoadingDone);
+    waitForWonderFontsReady(1800).then(() => {
+      if (mounted) setFontEpoch((e) => e + 1);
+    });
+    return () => {
+      mounted = false;
+      gDoc?.fonts?.removeEventListener?.('loadingdone', onLoadingDone);
+    };
+  }, []);
+
+  const activeAnnotationsForLayout = useMemo(
+    () => board.annotations.filter((a) => a.status === 'active'),
+    [board.annotations]
+  );
+
+  const resolvedLayoutByAnnId = useMemo(
+    () =>
+      buildResolvedAnnotationLayouts(board, activeAnnotationsForLayout, activeWritingBox),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      activeAnnotationsForLayout,
+      activeWritingBox,
+      board.regions,
+      board.strokes,
+      board.teachingCards,
+      board.viewport.scale,
+      fontEpoch,
+    ]
+  );
 
   const canvasRef = useRef<WebCanvasElementLike | null>(null);
   const activeStrokeRef = useRef<WonderStroke | null>(null);
@@ -1659,10 +2075,12 @@ export function WonderBoardScreen({
       active.width,
       active.tool
     );
+    setActiveWritingBox(active.bbox);
     scheduleRender();
   };
 
   const handlePointerUp = (rawEvent: WebPointerEventLike) => {
+    setActiveWritingBox(null);
     const ev = rawEvent.nativeEvent ?? rawEvent;
     activeTouchPointsRef.current.delete(ev.pointerId);
     if (activeTouchPointsRef.current.size < 2) {
@@ -1772,9 +2190,161 @@ export function WonderBoardScreen({
     }));
   };
 
+  const renderExportPngDataUrl = (): string => {
+    if (Platform.OS !== 'web') return '';
+    const srcCanvas = canvasRef.current;
+    const doc = (globalThis as unknown as {
+      document?: {
+        createElement(t: string): {
+          width: number;
+          height: number;
+          getContext(t: '2d'): {
+            fillStyle: string;
+            strokeStyle: string;
+            lineWidth: number;
+            lineCap: string;
+            lineJoin: string;
+            globalAlpha: number;
+            font: string;
+            save(): void;
+            restore(): void;
+            scale(sx: number, sy: number): void;
+            translate(tx: number, ty: number): void;
+            fillRect(x: number, y: number, w: number, h: number): void;
+            fillText(text: string, x: number, y: number): void;
+            measureText(text: string): { width: number };
+            stroke(path?: unknown): void;
+          } | null;
+          toDataURL(t?: string): string;
+        };
+      };
+    }).document;
+    if (!srcCanvas || !doc) return '';
+
+    const rect = srcCanvas.getBoundingClientRect();
+    const g = globalThis as unknown as {
+      devicePixelRatio?: number;
+      Path2D?: new (d: string) => unknown;
+    };
+    const dpr = Math.max(1, Math.min(2, g.devicePixelRatio ?? 1));
+    const cssW = Math.max(400, Math.round(rect.width || 1100));
+    const cssH = Math.max(300, Math.round(rect.height || 720));
+
+    const out = doc.createElement('canvas');
+    out.width = Math.round(cssW * dpr);
+    out.height = Math.round(cssH * dpr);
+    const ctx = out.getContext('2d');
+    if (!ctx) return srcCanvas.toDataURL?.('image/png') ?? '';
+
+    const curBoard = latestBoardRef.current;
+    const curTheme = WONDER_BOARD_THEMES[curBoard.themeId];
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = curTheme.backgroundHex;
+    ctx.fillRect(0, 0, cssW, cssH);
+    ctx.translate(curBoard.viewport.offsetX, curBoard.viewport.offsetY);
+    ctx.scale(curBoard.viewport.scale, curBoard.viewport.scale);
+
+    // Layer 2 Original Ink
+    for (const st of curBoard.strokes) {
+      drawStrokeOnCtx(
+        ctx as unknown as WebCanvasContextLike,
+        st,
+        curBoard.chalkTextureEnabled,
+        curTheme.backgroundHex
+      );
+    }
+
+    // Layer 4 Organic Clouds, Arrows & Mixed-Language Runs
+    if (curBoard.showAnnotations) {
+      const Path2DCtor = g.Path2D;
+      const activeAnns = curBoard.annotations.filter((a) => a.status === 'active');
+      const layouts = buildResolvedAnnotationLayouts(curBoard, activeAnns, null);
+      const vScale = Math.max(0.35, curBoard.viewport.scale || 1);
+      const zoomStrokeComp =
+        vScale < 1
+          ? Math.min(1.85, 1 / Math.pow(vScale, 0.65))
+          : Math.max(0.85, 1 / Math.pow(vScale, 0.25));
+
+      const drawMixedLine = (
+        lineText: string,
+        role: 'correction' | 'explanation',
+        baseSize: number,
+        startX: number,
+        baseY: number,
+        color: string
+      ) => {
+        const runs = segmentMixedLanguageRuns(lineText, role, baseSize);
+        let cursorX = startX;
+        ctx.fillStyle = color;
+        for (const r of runs) {
+          ctx.font = `${r.fontWeight} ${r.fontSize}px ${r.fontFamily}`;
+          const yAdj = baseY + r.baselineShiftEm * baseSize;
+          ctx.fillText(r.text, cursorX, yAdj);
+          cursorX += ctx.measureText(r.text).width;
+        }
+      };
+
+      for (const ann of activeAnns) {
+        const l = layouts[ann.annotation_id];
+        if (!l) continue;
+        const accent = ann.visual_style.accentColor;
+        const targetH = Math.max(28, ann.target_geometry.height);
+        const sizeStrokeComp = Math.max(1.0, Math.min(1.38, targetH / 115));
+        const cloudStrokeW = Number((3.4 * zoomStrokeComp * sizeStrokeComp).toFixed(2));
+        const arrowStrokeW = Number((2.6 * zoomStrokeComp * sizeStrokeComp).toFixed(2));
+
+        if (Path2DCtor) {
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = accent;
+          ctx.globalAlpha = 0.95;
+          ctx.lineWidth = cloudStrokeW;
+          ctx.stroke(new Path2DCtor(l.cloud.pathData));
+
+          const arrowPaths = sliceArrowPathAtProgress(l.arrow, 1);
+          ctx.lineWidth = arrowStrokeW;
+          ctx.stroke(new Path2DCtor(arrowPaths.shaftPath));
+          ctx.stroke(new Path2DCtor(arrowPaths.headPath));
+        }
+
+        ctx.globalAlpha = 1;
+        l.headerMetrics.lines.forEach((hl, idx) => {
+          drawMixedLine(
+            hl.text,
+            'correction',
+            l.headerFontSize,
+            l.textBaseX,
+            l.textBaseY + idx * Math.round(l.headerFontSize * 1.32),
+            accent
+          );
+        });
+        const hdrH =
+          Math.max(1, l.headerMetrics.lines.length) * Math.round(l.headerFontSize * 1.32);
+        l.explMetrics.lines.forEach((el, idx) => {
+          drawMixedLine(
+            el.text,
+            'explanation',
+            l.explFontSize,
+            l.textBaseX,
+            l.textBaseY +
+              hdrH -
+              Math.round(l.headerFontSize * 0.45) +
+              l.explGapTop +
+              idx * l.explLineHeight,
+            curTheme.primaryInkHex
+          );
+        });
+      }
+    }
+
+    ctx.restore();
+    return out.toDataURL('image/png');
+  };
+
   const handleExportPng = () => {
-    if (Platform.OS !== 'web' || !canvasRef.current?.toDataURL) return;
-    const url = canvasRef.current.toDataURL('image/png');
+    const url = renderExportPngDataUrl();
+    if (!url) return;
     const doc = (globalThis as unknown as {
       document?: {
         createElement(t: string): { href: string; download: string; click(): void };
@@ -2045,6 +2615,132 @@ export function WonderBoardScreen({
       },
       runAnalysisNow: () => runAmbientAnalysis(latestBoardRef.current.revision, false),
       getBenchmarkV3: () => evaluateWonderBoardBenchmarkV3(),
+      getFontEpoch: () => fontEpoch,
+      exportPngDataUrl: () => renderExportPngDataUrl(),
+      getAnimationTimings: () => overlayHelpersRef.current?.getAnimationTimings() ?? {},
+      skipAnnotationAnim: (annId: string) => overlayHelpersRef.current?.skipAnnotationAnim(annId),
+      getMeasuredLayouts: () => {
+        const res: Record<string, { noteBox: WonderBBox; arrow: WonderAnnotation['arrow_path']; headerFontSize: number; explFontSize: number; lines: string[]; cloudBounds: WonderBBox }> = {};
+        for (const [id, l] of Object.entries(resolvedLayoutByAnnId)) {
+          res[id] = {
+            noteBox: l.noteBox,
+            arrow: l.arrow,
+            headerFontSize: l.headerFontSize,
+            explFontSize: l.explFontSize,
+            lines: [
+              ...l.headerMetrics.lines.map((x) => x.text),
+              ...l.explMetrics.lines.map((x) => x.text),
+            ],
+            cloudBounds: l.cloud.outerBounds,
+          };
+        }
+        return res;
+      },
+      injectMixedLanguageAnnotations: (
+        cases: Array<{
+          targetText: string;
+          suggestedCorrection: string;
+          explanation: string;
+          severity?: WonderAnnotation['severity'];
+          box?: WonderBBox;
+        }>
+      ) => {
+        const cur = latestBoardRef.current;
+        const rev = cur.revision + 1;
+        const syntheticStrokes: WonderStroke[] = [];
+        const anns: WonderAnnotation[] = cases.map((c, idx) => {
+          const box = c.box ?? {
+            minX: 80 + (idx % 2) * 430,
+            minY: 70 + Math.floor(idx / 2) * 240,
+            maxX: 250 + (idx % 2) * 430,
+            maxY: 145 + Math.floor(idx / 2) * 240,
+            width: 170,
+            height: 75,
+          };
+          const strokeId = `mix_st_${rev}_${idx}`;
+          const pts = [
+            { x: box.minX + 8, y: box.minY + Math.round(box.height * 0.25), pressure: 0.6, t: 1 },
+            { x: (box.minX + box.maxX) / 2, y: box.maxY - Math.round(box.height * 0.2), pressure: 0.6, t: 2 },
+            { x: box.maxX - 8, y: box.minY + Math.round(box.height * 0.35), pressure: 0.6, t: 3 },
+          ];
+          syntheticStrokes.push({
+            id: strokeId,
+            boardId: cur.id,
+            points: pts,
+            color: theme.primaryInkHex,
+            width: 3.4,
+            tool: 'chalk',
+            bbox: box,
+            transform: { dx: 0, dy: 0 },
+            revision: rev,
+            createdAt: Date.now() + idx,
+            provenance: 'freehand_ink',
+          });
+          const accent =
+            c.severity === 'error'
+              ? theme.aiCorrectionHex
+              : c.severity === 'praise'
+              ? theme.aiPositiveHex
+              : theme.aiSupportHex;
+          return {
+            annotation_id: `mix_ann_${rev}_${idx}`,
+            stable_key: `${cur.id}_mix_${idx}_${c.targetText}`,
+            cloud_seed: idx + 1,
+            board_id: cur.id,
+            source_revision: rev,
+            source_stroke_ids: [strokeId],
+            recognized_text: c.targetText,
+            target_text: c.targetText,
+            target_span: { start: 0, end: c.targetText.length },
+            target_geometry: box,
+            note_geometry: {
+              minX: box.minX,
+              minY: box.maxY + 34,
+              maxX: box.minX + 320,
+              maxY: box.maxY + 130,
+              width: 320,
+              height: 96,
+            },
+            arrow_path: {
+              fromX: box.minX + box.width / 2,
+              fromY: box.maxY + 16,
+              ctrlX: box.minX + box.width / 2 + 12,
+              ctrlY: box.maxY + 25,
+              toX: box.minX + box.width / 2,
+              toY: box.maxY + 30,
+            },
+            annotation_type: c.severity === 'error' ? 'grammar_correction' : 'explanation',
+            linguistic_category: 'hangul_shape',
+            severity: c.severity ?? 'info',
+            confidence: 0.96,
+            suggested_correction: c.suggestedCorrection,
+            explanation: c.explanation,
+            hint: '',
+            visual_style: {
+              shape: 'scalloped_cloud',
+              accentColor: accent,
+            },
+            placement_preference: 'below',
+            learning_concept_ids: [],
+            created_at: Date.now() + idx,
+            status: 'active',
+            lifecycle_state: 'queued',
+            animation_progress: {
+              cloud: 0,
+              arrow: 0,
+              correction: 0,
+              explanation: 0,
+              completed: false,
+            },
+          };
+        });
+        updateActiveBoard((b) => ({
+          ...b,
+          revision: rev,
+          strokes: syntheticStrokes,
+          annotations: anns,
+        }));
+      },
       setGuidanceLevel: (level: WonderGuidanceLevel) => {
         updateActiveBoard((b) => ({ ...b, guidanceLevel: level }));
       },
@@ -2203,9 +2899,30 @@ export function WonderBoardScreen({
               selectedStrokeIds={selectedStrokeIds}
               animOverrideMap={animOverrideMap}
               selectedNoteId={selectedNoteId}
+              activeWritingBox={activeWritingBox}
+              fontEpoch={fontEpoch}
+              resolvedLayoutByAnnId={resolvedLayoutByAnnId}
               onSelectNote={setSelectedNoteId}
               onAnnotationPhaseCompleted={handleAnnotationPhaseCompleted}
               onTeacherStateHint={setTeacherState}
+              onAnimationTimingsObserved={(_annId, _sched, actualCloudMs, actualTextMs) => {
+                updateActiveBoard((b) => ({
+                  ...b,
+                  telemetry: {
+                    ...b.telemetry,
+                    lastCloudAnimDurationMs: actualCloudMs ?? b.telemetry.lastCloudAnimDurationMs,
+                    lastTextRevealDurationMs: actualTextMs ?? b.telemetry.lastTextRevealDurationMs,
+                    lastTotalTimeToFeedbackMs:
+                      (b.telemetry.lastRecognitionLatencyMs || 0) +
+                      (b.telemetry.lastAiLatencyMs || 0) +
+                      (actualCloudMs ?? 0) +
+                      (actualTextMs ?? 0),
+                  },
+                }));
+              }}
+              onExposeOverlayHelpers={(helpers) => {
+                overlayHelpersRef.current = helpers;
+              }}
             />
           </>
         ) : (
@@ -2548,9 +3265,11 @@ export function WonderBoardScreen({
             <Text style={styles.popoverNote}>
               Elo: {Math.round(aiProfile.eloRating)} | Phân đoạn:{' '}
               {board.telemetry.lastSegmentationMs ?? 0}ms | Cục bộ:{' '}
-              {board.telemetry.lastLocalRecognitionMs ?? 0}ms | Cloud:{' '}
+              {board.telemetry.lastLocalRecognitionMs ?? 0}ms | Cloud OCR:{' '}
               {board.telemetry.lastCloudRecognitionMs ?? 0}ms | Sư phạm:{' '}
-              {board.telemetry.lastAiLatencyMs}ms
+              {board.telemetry.lastAiLatencyMs}ms | Mây:{' '}
+              {board.telemetry.lastCloudAnimDurationMs ?? 0}ms | Chữ:{' '}
+              {board.telemetry.lastTextRevealDurationMs ?? 0}ms
             </Text>
 
             <Text style={styles.sectionLbl}>Chẩn đoán Nhận dạng (Developer Diagnostics)</Text>

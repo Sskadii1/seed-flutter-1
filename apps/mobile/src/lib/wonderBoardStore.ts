@@ -64,11 +64,19 @@ function migrateBoardToV2(b: Partial<WonderBoardDocument>, fromV1 = false): Wond
       })
     : [];
 
+  const validSpeeds = ['slow', 'natural', 'fast', 'instant'] as const;
+  const migratedSpeed =
+    typeof b.animationSpeed === 'string' &&
+    (validSpeeds as readonly string[]).includes(b.animationSpeed)
+      ? b.animationSpeed
+      : 'natural';
+
   return {
     ...base,
     ...b,
     themeId: targetTheme,
     guidanceLevel: b.guidanceLevel ?? 'guided',
+    animationSpeed: migratedSpeed,
     redoStack: Array.isArray(b.redoStack) ? b.redoStack : [],
     strokes: Array.isArray(b.strokes) ? b.strokes : [],
     annotations: migratedAnnotations,

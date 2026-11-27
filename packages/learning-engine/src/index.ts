@@ -8,3 +8,4 @@ export * from './wonder-perception';
 export * from './wonder-context';
 export * from './wonder-tutor';
 export * from './wonder-benchmark-v3';
+export * from './wonder-typography';

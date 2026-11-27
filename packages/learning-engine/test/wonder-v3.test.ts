@@ -10,6 +10,11 @@ import {
   buildBoardContextModel,
   buildHangulStrokeOrderDemo,
   classifyLearningIntents,
+  computeAdaptiveAnnotationTypography,
+  computeAnnotationPhaseTimings,
+  computeCloudDurationMs,
+  computeCollisionFreePlacement,
+  computeQueueSpeedMultiplier,
   computeStrokeBoundingBox,
   createEmptyWonderBoard,
   createInitialAiProfile,
@@ -17,14 +22,20 @@ import {
   evaluateSelfCorrectionEvidence,
   evaluateWonderBoardBenchmarkV3,
   executeGestureQuery,
+  FONT_FAMILY_KO_CHALK,
+  FONT_FAMILY_VI_CHALK,
   generateHandwrittenStrokesForText,
   generateScallopedCloudGeometry,
   orchestrateWonderTutor,
   recognizeHandwritingRegions,
   recognizeWithHybridPipeline,
+  segmentMixedLanguageRuns,
+  segmentUnicodeGraphemes,
   sliceHangulDemoAtProgress,
+  sliceMixedLanguageReveal,
   verifyCloudClearance,
   WonderRecognitionCache,
+  wrapMixedLanguageRuns,
 } from '../src/index';
 // @ts-ignore - runtime ESM import of gateway module
 import { createGatewayServer } from '../../../services/ai-gateway/server.mjs';
@@ -1138,4 +1149,115 @@ test('V3-12 P0 Fixes: Zero unknown-ink clouds, canonical deduplication, billowy 
   const clearance = verifyCloudClearance(cloud, gomaStrokes);
   assert.equal(clearance.valid, true);
   assert.ok(cloud.safeInteriorBounds.minX <= largeBox.minX - 60, 'Expected generous proportional horizontal padding');
+});
+
+test('V3-13 Hotfix: Mixed-language font runs, adaptive typography bounds, fast chalk timings & collision-free arrow/note placement', () => {
+  // 1. All 6 visual regression mixed-language phrases preserve Vietnamese combining diacritics & separate Hangul vs Vietnamese runs
+  const samples = [
+    '아 [a]',
+    'Âm tiết 아 = ㅇ (âm câm đầu) + ㅏ [a].',
+    'Ví dụ: 아이 (đứa trẻ), 아버지 (bố).',
+    '저는 한국어를 공부해요.',
+    '받침 — phụ âm cuối.',
+    '학생예요 → 학생이에요.',
+  ];
+  for (const s of samples) {
+    const runs = segmentMixedLanguageRuns(s, 'explanation', 18);
+    assert.ok(runs.length >= 1, `Expected font runs for ${s}`);
+    assert.equal(runs.map((r) => r.text).join(''), s.normalize('NFC'));
+    const hangulRuns = runs.filter((r) => r.script === 'hangul_syllable' || r.script === 'hangul_jamo');
+    const viRuns = runs.filter((r) => r.script === 'vietnamese_latin');
+    for (const h of hangulRuns) assert.equal(h.fontFamily, FONT_FAMILY_KO_CHALK);
+    for (const v of viRuns) assert.equal(v.fontFamily, FONT_FAMILY_VI_CHALK);
+  }
+
+  // Grapheme slicing must never detach Vietnamese tone marks (e.g. NFD "đầu")
+  const nfdSample = 'đa\u0302\u0300u tie\u0302\u0301ng Vie\u0323\u0302t';
+  assert.equal(segmentUnicodeGraphemes(nfdSample).length, 14);
+  const sliced = sliceMixedLanguageReveal(nfdSample, 0.3);
+  assert.equal(sliced, sliced.normalize('NFC'));
+
+  // 2. Adaptive typography bounds decoupled from giant handwriting height across zooms
+  const smallHandTypo = computeAdaptiveAnnotationTypography(44, 1.0);
+  const hugeHandTypo = computeAdaptiveAnnotationTypography(290, 1.0);
+  assert.ok(smallHandTypo.correctionCssPx >= 24 && smallHandTypo.correctionCssPx <= 36);
+  assert.ok(hugeHandTypo.correctionCssPx >= 24 && hugeHandTypo.correctionCssPx <= 36);
+  assert.ok(hugeHandTypo.explanationCssPx >= 16 && hugeHandTypo.explanationCssPx <= 21);
+  assert.ok(hugeHandTypo.lineHeightRatio >= 1.4 && hugeHandTypo.lineHeightRatio <= 1.55);
+  assert.ok(hugeHandTypo.safeGapCssPx >= 24 && hugeHandTypo.safeGapCssPx <= 40);
+
+  for (const z of [0.45, 0.75, 1.0, 1.5, 2.0]) {
+    const t = computeAdaptiveAnnotationTypography(88, z);
+    assert.ok(t.correctionWorldPx >= 20, `Zoom ${z} correctionWorldPx >= 20`);
+    assert.ok(t.explanationWorldPx >= 15, `Zoom ${z} explanationWorldPx >= 15`);
+  }
+
+  // Wrapping keeps Hangul + Vietnamese lines within target width
+  const wrapped = wrapMixedLanguageRuns(
+    'Âm tiết 아 = ㅇ (âm câm đầu) + ㅏ [a]. Ví dụ: 아이 (đứa trẻ), 아버지 (bố).',
+    'explanation',
+    18,
+    300
+  );
+  assert.ok(wrapped.lines.length >= 2 && wrapped.maxWidth <= 320);
+
+  // 3. Animation timings satisfy A01-A03 & adaptive queue scaling
+  const smallCloudMs = computeCloudDurationMs(620, 'natural', 1);
+  const medCloudMs = computeCloudDurationMs(900, 'natural', 1);
+  const largeCloudMs = computeCloudDurationMs(1600, 'natural', 1);
+  assert.ok(smallCloudMs >= 600 && smallCloudMs <= 900, `Expected small cloud 600-900ms, got ${smallCloudMs}`);
+  assert.ok(medCloudMs >= 900 && medCloudMs <= 1300, `Expected medium cloud 900-1300ms, got ${medCloudMs}`);
+  assert.ok(largeCloudMs <= 1800, `Expected large cloud <= 1800ms, got ${largeCloudMs}`);
+
+  assert.equal(computeQueueSpeedMultiplier(1), 1.0);
+  assert.ok(computeQueueSpeedMultiplier(3) < 1.0);
+  assert.ok(computeQueueSpeedMultiplier(5) < computeQueueSpeedMultiplier(3));
+  assert.ok(computeQueueSpeedMultiplier(7) < computeQueueSpeedMultiplier(5));
+
+  const sched = computeAnnotationPhaseTimings({
+    cloudPathLengthWorld: 680,
+    viewportScale: 1,
+    arrowLengthWorld: 180,
+    correctionText: '학생예요 → 학생이에요',
+    explanationText: 'Dùng -이에요 vì danh từ "학생" có patchim ㅇ ở cuối.',
+    speed: 'natural',
+    pendingCount: 1,
+  });
+  assert.ok(sched.arrowMs >= 200 && sched.arrowMs <= 350, `Expected arrow 200-350ms, got ${sched.arrowMs}`);
+  assert.ok(sched.pauseAfterCloudMs >= 50 && sched.pauseAfterCloudMs <= 100);
+  assert.ok(sched.explMs <= 1500, `Expected explanation reveal <= 1500ms, got ${sched.explMs}`);
+
+  // 4. Spatial placement prevents arrow/cloud/note collisions even when writing encroaches below
+  const targetBox = { minX: 120, minY: 120, maxX: 280, maxY: 200, width: 160, height: 80 };
+  const cloudOuter = generateScallopedCloudGeometry(targetBox, 1).outerBounds;
+  const activeBelowBlocker = {
+    minX: cloudOuter.minX - 20,
+    minY: cloudOuter.maxY + 10,
+    maxX: cloudOuter.maxX + 40,
+    maxY: cloudOuter.maxY + 180,
+    width: cloudOuter.width + 60,
+    height: 170,
+  };
+  const placed = computeCollisionFreePlacement({
+    targetBox,
+    desiredWidth: 280,
+    desiredHeight: 110,
+    preferredOrder: ['below', 'right', 'above', 'left'],
+    occupiedBoxes: [],
+    activeWritingBox: activeBelowBlocker,
+    safeGap: 28,
+  });
+  assert.notEqual(placed.placement, 'below', 'Should avoid active writing region below cloud');
+  assert.equal(boxesIntersect(placed.noteBox, cloudOuter, 8), false, 'Note must not collide with cloud');
+  assert.equal(boxesIntersect(placed.noteBox, activeBelowBlocker, 8), false, 'Note must not collide with active ink');
+  // Arrow destination must stay strictly outside noteBox (no arrow-over-text intersection)
+  const arrowEndBox = {
+    minX: placed.arrow.toX - 2,
+    minY: placed.arrow.toY - 2,
+    maxX: placed.arrow.toX + 2,
+    maxY: placed.arrow.toY + 2,
+    width: 4,
+    height: 4,
+  };
+  assert.equal(boxesIntersect(arrowEndBox, placed.noteBox, 2), false, 'Arrowhead must stop outside noteBox');
 });

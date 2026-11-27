@@ -611,51 +611,95 @@ export function generateCurvedChalkArrowSvgPath(arrow: WonderArrowPath): {
 // 3. Collision-Free Spatial Annotation Placement (Section 13)
 // ---------------------------------------------------------------------------
 
+type SpatialPlacementDirection =
+  | 'below'
+  | 'right'
+  | 'above'
+  | 'left'
+  | 'below_right'
+  | 'below_left'
+  | 'above_right'
+  | 'above_left';
+
+function toBasePlacement(dir: SpatialPlacementDirection): WonderPlacementPreference {
+  if (dir === 'below_right' || dir === 'below_left') return 'below';
+  if (dir === 'above_right' || dir === 'above_left') return 'above';
+  return dir;
+}
+
 function makeArrowBetween(
   targetBox: WonderBBox,
   noteBox: WonderBBox,
-  placement: WonderPlacementPreference
+  placement: WonderPlacementPreference,
+  cloud?: WonderCloudGeometry
 ): WonderArrowPath {
-  const cloud = generateScallopedCloudGeometry(targetBox, 1);
-  const anchor = cloud.connectionAnchors[placement];
+  const resolvedCloud = cloud ?? generateScallopedCloudGeometry(targetBox, 1);
+  const cloudBox = resolvedCloud.outerBounds;
+  const cloudCx = (cloudBox.minX + cloudBox.maxX) / 2;
+  const cloudCy = (cloudBox.minY + cloudBox.maxY) / 2;
   const noteCx = (noteBox.minX + noteBox.maxX) / 2;
   const noteCy = (noteBox.minY + noteBox.maxY) / 2;
+  const stopPad = 12;
 
-  let fromX = anchor.x;
-  let fromY = anchor.y;
   let toX = noteCx;
-  let toY = noteBox.minY - 6;
-
+  let toY = noteBox.minY - stopPad;
   if (placement === 'above') {
     toX = noteCx;
-    toY = noteBox.maxY + 6;
+    toY = noteBox.maxY + stopPad;
   } else if (placement === 'right') {
-    toX = noteBox.minX - 6;
+    toX = noteBox.minX - stopPad;
     toY = noteCy;
   } else if (placement === 'left') {
-    toX = noteBox.maxX + 6;
+    toX = noteBox.maxX + stopPad;
     toY = noteCy;
   }
 
-  const horizontalSpan = Math.abs(toX - fromX);
-  if ((placement === 'left' || placement === 'right') && horizontalSpan > 110) {
-    fromY = Math.min(anchor.y, targetBox.minY + 4);
+  // Clamp arrow entry near the side of the note facing the cloud if diagonally offset
+  if (placement === 'below' || placement === 'above') {
+    toX = Math.max(noteBox.minX + 18, Math.min(noteBox.maxX - 18, cloudCx));
+  } else {
+    toY = Math.max(noteBox.minY + 14, Math.min(noteBox.maxY - 14, cloudCy));
   }
-  const midX = (fromX + toX) / 2;
-  const midY = (fromY + toY) / 2;
-  const curveOffset =
-    placement === 'left' || placement === 'right'
-      ? horizontalSpan > 110
-        ? Math.min(fromY, toY) - 66 - midY
-        : -18
-      : 20;
+
+  // Pick closest point along actual exterior cloud boundary facing the arrow destination
+  let fromX = resolvedCloud.connectionAnchors[placement].x;
+  let fromY = resolvedCloud.connectionAnchors[placement].y;
+  if (resolvedCloud.sampledPoints.length > 0) {
+    let bestDist = Infinity;
+    for (const pt of resolvedCloud.sampledPoints) {
+      if (placement === 'below' && pt.y < cloudCy) continue;
+      if (placement === 'above' && pt.y > cloudCy) continue;
+      if (placement === 'right' && pt.x < cloudCx) continue;
+      if (placement === 'left' && pt.x > cloudCx) continue;
+      const d = Math.hypot(pt.x - toX, pt.y - toY);
+      if (d < bestDist) {
+        bestDist = d;
+        fromX = pt.x;
+        fromY = pt.y;
+      }
+    }
+    const outX = fromX - cloudCx;
+    const outY = fromY - cloudCy;
+    const outLen = Math.hypot(outX, outY) || 1;
+    fromX += (outX / outLen) * 5;
+    fromY += (outY / outLen) * 5;
+  }
+
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  const dist = Math.hypot(dx, dy) || 1;
+  const nx = -dy / dist;
+  const ny = dx / dist;
+  const sign = placement === 'left' || placement === 'above' ? -1 : 1;
+  const arcAmp = Math.min(22, Math.max(10, dist * 0.14)) * sign;
+
   return {
-    fromX,
-    fromY,
-    ctrlX: midX + (placement === 'below' || placement === 'above' ? curveOffset : 0),
-    ctrlY: midY + (placement === 'left' || placement === 'right' ? curveOffset : 0),
-    toX,
-    toY,
+    fromX: Number(fromX.toFixed(1)),
+    fromY: Number(fromY.toFixed(1)),
+    ctrlX: Number(((fromX + toX) / 2 + nx * arcAmp).toFixed(1)),
+    ctrlY: Number(((fromY + toY) / 2 + ny * arcAmp).toFixed(1)),
+    toX: Number(toX.toFixed(1)),
+    toY: Number(toY.toFixed(1)),
   };
 }
 
@@ -671,13 +715,14 @@ function boxEncloses(outer: WonderBBox, inner: WonderBBox): boolean {
 function arrowCrossesForeignBlocker(
   arrow: WonderArrowPath,
   targetBox: WonderBBox,
-  blockers: WonderBBox[]
+  blockers: WonderBBox[],
+  noteBox?: WonderBBox
 ): boolean {
   const foreignBlockers = blockers.filter(
-    (b) => !boxEncloses(b, targetBox) && !boxesIntersect(b, targetBox, 18)
+    (b) => !boxEncloses(b, targetBox) && !boxesIntersect(b, targetBox, 14)
   );
-  if (foreignBlockers.length === 0) return false;
-  for (const t of [0.2, 0.35, 0.5, 0.65, 0.8]) {
+  // Check both arrow shaft AND arrowhead tip (t = 0.15 .. 1.0)
+  for (const t of [0.15, 0.3, 0.45, 0.6, 0.75, 0.88, 1.0]) {
     const mt = 1 - t;
     const px = mt * mt * arrow.fromX + 2 * mt * t * arrow.ctrlX + t * t * arrow.toX;
     const py = mt * mt * arrow.fromY + 2 * mt * t * arrow.ctrlY + t * t * arrow.toY;
@@ -689,6 +734,9 @@ function arrowCrossesForeignBlocker(
       width: 10,
       height: 10,
     };
+    if (noteBox && boxesIntersect(sampleBox, noteBox, 3)) {
+      return true;
+    }
     if (foreignBlockers.some((b) => boxesIntersect(sampleBox, b, 6))) {
       return true;
     }
@@ -703,6 +751,9 @@ export function computeCollisionFreePlacement(params: {
   preferredOrder?: WonderPlacementPreference[];
   occupiedBoxes: WonderBBox[];
   activeWritingBox?: WonderBBox | null;
+  safeGap?: number;
+  maxWorldRight?: number;
+  cloudSeed?: number;
 }): {
   noteBox: WonderBBox;
   placement: WonderPlacementPreference;
@@ -715,9 +766,13 @@ export function computeCollisionFreePlacement(params: {
     preferredOrder = ['below', 'right', 'above', 'left'],
     occupiedBoxes,
     activeWritingBox,
+    safeGap = 28,
+    maxWorldRight = 1040,
+    cloudSeed = 1,
   } = params;
 
-  const cloudOuterBox = generateScallopedCloudGeometry(targetBox, 1, occupiedBoxes).outerBounds;
+  const cloud = generateScallopedCloudGeometry(targetBox, cloudSeed, occupiedBoxes);
+  const cloudOuterBox = cloud.outerBounds;
 
   const blockers = [
     cloudOuterBox,
@@ -725,18 +780,48 @@ export function computeCollisionFreePlacement(params: {
   ];
   const cx = (targetBox.minX + targetBox.maxX) / 2;
   const cy = (targetBox.minY + targetBox.maxY) / 2;
+  const clampedBaseGap = Math.max(24, Math.min(44, Math.round(safeGap)));
 
-  const makeCandidate = (pref: WonderPlacementPreference, stepGap: number): WonderBBox => {
+  const expandedDirs: SpatialPlacementDirection[] = [];
+  for (const p of preferredOrder) expandedDirs.push(p);
+  for (const diag of ['below_right', 'below_left', 'above_right', 'above_left'] as const) {
+    expandedDirs.push(diag);
+  }
+
+  const makeCandidate = (dir: SpatialPlacementDirection, stepGap: number): WonderBBox => {
     let minX = cx - desiredWidth / 2;
     let minY = cloudOuterBox.maxY + stepGap;
-    if (pref === 'above') {
-      minY = cloudOuterBox.minY - stepGap - desiredHeight;
-    } else if (pref === 'right') {
-      minX = cloudOuterBox.maxX + stepGap;
-      minY = cy - desiredHeight / 2;
-    } else if (pref === 'left') {
-      minX = cloudOuterBox.minX - stepGap - desiredWidth;
-      minY = cy - desiredHeight / 2;
+    switch (dir) {
+      case 'above':
+        minY = cloudOuterBox.minY - stepGap - desiredHeight;
+        break;
+      case 'right':
+        minX = cloudOuterBox.maxX + stepGap;
+        minY = cy - desiredHeight / 2;
+        break;
+      case 'left':
+        minX = cloudOuterBox.minX - stepGap - desiredWidth;
+        minY = cy - desiredHeight / 2;
+        break;
+      case 'below_right':
+        minX = cloudOuterBox.maxX - desiredWidth * 0.28 + Math.round(stepGap * 0.45);
+        minY = cloudOuterBox.maxY + stepGap;
+        break;
+      case 'below_left':
+        minX = cloudOuterBox.minX - desiredWidth * 0.72 - Math.round(stepGap * 0.45);
+        minY = cloudOuterBox.maxY + stepGap;
+        break;
+      case 'above_right':
+        minX = cloudOuterBox.maxX - desiredWidth * 0.28 + Math.round(stepGap * 0.45);
+        minY = cloudOuterBox.minY - stepGap - desiredHeight;
+        break;
+      case 'above_left':
+        minX = cloudOuterBox.minX - desiredWidth * 0.72 - Math.round(stepGap * 0.45);
+        minY = cloudOuterBox.minY - stepGap - desiredHeight;
+        break;
+      case 'below':
+      default:
+        break;
     }
     minX = Math.max(16, minX);
     minY = Math.max(16, minY);
@@ -750,19 +835,20 @@ export function computeCollisionFreePlacement(params: {
     };
   };
 
-  for (const stepGap of [24, 58, 100, 150, 210, 270]) {
-    for (const pref of preferredOrder) {
-      const candidate = makeCandidate(pref, stepGap);
-      if (pref === 'right' && candidate.maxX > 920) {
-        continue;
-      }
-      const collides = blockers.some((b) => boxesIntersect(candidate, b, 10));
+  for (const extra of [0, 28, 64, 112, 170, 230]) {
+    const stepGap = clampedBaseGap + extra;
+    for (const dir of expandedDirs) {
+      const candidate = makeCandidate(dir, stepGap);
+      if (candidate.maxX > maxWorldRight) continue;
+      if (candidate.minY < 16) continue;
+      const collides = blockers.some((b) => boxesIntersect(candidate, b, 12));
       if (!collides) {
-        const arrow = makeArrowBetween(targetBox, candidate, pref);
-        if (!arrowCrossesForeignBlocker(arrow, targetBox, blockers)) {
+        const basePlacement = toBasePlacement(dir);
+        const arrow = makeArrowBetween(targetBox, candidate, basePlacement, cloud);
+        if (!arrowCrossesForeignBlocker(arrow, targetBox, blockers, candidate)) {
           return {
             noteBox: candidate,
-            placement: pref,
+            placement: basePlacement,
             arrow,
           };
         }
@@ -770,21 +856,78 @@ export function computeCollisionFreePlacement(params: {
     }
   }
 
-  // Fallback: place cleanly below the lowest blocker
+  // Secondary 2D radial ring search: find any free pocket where neither note nor arrow crosses blockers
+  const cloudHalfW = cloudOuterBox.width / 2;
+  const cloudHalfH = cloudOuterBox.height / 2;
+  const candidateAngles = [
+    Math.PI / 2,
+    0,
+    Math.PI / 4,
+    (3 * Math.PI) / 4,
+    -Math.PI / 4,
+    (-3 * Math.PI) / 4,
+    Math.PI,
+    -Math.PI / 2,
+    Math.PI / 6,
+    (5 * Math.PI) / 6,
+    -Math.PI / 6,
+    (-5 * Math.PI) / 6,
+  ];
+  for (const distOut of [clampedBaseGap, clampedBaseGap + 45, clampedBaseGap + 95, clampedBaseGap + 150, clampedBaseGap + 220]) {
+    for (const ang of candidateAngles) {
+      const cosA = Math.cos(ang);
+      const sinA = Math.sin(ang);
+      const anchorX = cx + cosA * (cloudHalfW + distOut + desiredWidth / 2);
+      const anchorY = cy + sinA * (cloudHalfH + distOut + desiredHeight / 2);
+      const minX = Math.max(16, Math.min(maxWorldRight - desiredWidth, Math.round(anchorX - desiredWidth / 2)));
+      const minY = Math.max(16, Math.round(anchorY - desiredHeight / 2));
+      const candidate: WonderBBox = {
+        minX,
+        minY,
+        maxX: minX + desiredWidth,
+        maxY: minY + desiredHeight,
+        width: desiredWidth,
+        height: desiredHeight,
+      };
+      if (blockers.some((b) => boxesIntersect(candidate, b, 12))) continue;
+      const basePlacement: WonderPlacementPreference =
+        Math.abs(cosA) > Math.abs(sinA)
+          ? cosA >= 0
+            ? 'right'
+            : 'left'
+          : sinA >= 0
+          ? 'below'
+          : 'above';
+      const arrow = makeArrowBetween(targetBox, candidate, basePlacement, cloud);
+      if (!arrowCrossesForeignBlocker(arrow, targetBox, blockers, candidate)) {
+        return {
+          noteBox: candidate,
+          placement: basePlacement,
+          arrow,
+        };
+      }
+    }
+  }
+
+  // Final fallback: place below lowest blocker shifted clear of horizontal obstacles if possible
   const lowestMaxY = blockers.reduce((acc, b) => Math.max(acc, b.maxY), targetBox.maxY);
-  const fallbackMinX = Math.max(16, Math.min(920 - desiredWidth, cx - desiredWidth / 2));
+  const fallbackMinX = Math.max(
+    16,
+    Math.min(maxWorldRight - desiredWidth, cx - desiredWidth / 2)
+  );
+  const fallbackMinY = lowestMaxY + clampedBaseGap;
   const fallbackBox: WonderBBox = {
     minX: fallbackMinX,
-    minY: lowestMaxY + 28,
+    minY: fallbackMinY,
     maxX: fallbackMinX + desiredWidth,
-    maxY: lowestMaxY + 28 + desiredHeight,
+    maxY: fallbackMinY + desiredHeight,
     width: desiredWidth,
     height: desiredHeight,
   };
   return {
     noteBox: fallbackBox,
     placement: 'below',
-    arrow: makeArrowBetween(targetBox, fallbackBox, 'below'),
+    arrow: makeArrowBetween(targetBox, fallbackBox, 'below', cloud),
   };
 }
 

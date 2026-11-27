@@ -691,6 +691,9 @@ export interface WonderTelemetryMetrics {
   lastCloudRecognitionMs?: number;
   lastLinguisticAnalysisMs?: number;
   lastQueueWaitMs?: number;
+  lastCloudAnimDurationMs?: number;
+  lastTextRevealDurationMs?: number;
+  lastTotalTimeToFeedbackMs?: number;
   apiCallCount: number;
   estimatedTokens: number;
   errorCount: number;

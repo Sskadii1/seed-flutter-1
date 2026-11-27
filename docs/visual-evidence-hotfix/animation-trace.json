@@ -1,0 +1,169 @@
+{
+  "timings": [
+    {
+      "label": "A01_small",
+      "cloudMs": 822,
+      "pauseAfterCloudMs": 70,
+      "arrowMs": 200,
+      "pauseBeforeExplMs": 70,
+      "corrMs": 450,
+      "explMs": 969,
+      "totalAnimMs": 2581,
+      "queueMultiplier": 1,
+      "speedFactor": 1,
+      "startedAtMs": 1795747699275,
+      "cloudDoneAtMs": 1795747700108,
+      "actualCloudMs": 833
+    },
+    {
+      "label": "A02_medium",
+      "cloudMs": 1262,
+      "pauseAfterCloudMs": 70,
+      "arrowMs": 200,
+      "pauseBeforeExplMs": 70,
+      "corrMs": 450,
+      "explMs": 969,
+      "totalAnimMs": 3021,
+      "queueMultiplier": 1,
+      "speedFactor": 1,
+      "startedAtMs": 1795747700157,
+      "cloudDoneAtMs": 1795747701427,
+      "actualCloudMs": 1270
+    },
+    {
+      "label": "A03_large",
+      "cloudMs": 1800,
+      "pauseAfterCloudMs": 70,
+      "arrowMs": 200,
+      "pauseBeforeExplMs": 70,
+      "corrMs": 450,
+      "explMs": 969,
+      "totalAnimMs": 3559,
+      "queueMultiplier": 1,
+      "speedFactor": 1,
+      "startedAtMs": 1795747701492,
+      "cloudDoneAtMs": 1795747703290,
+      "actualCloudMs": 1798
+    }
+  ],
+  "zooms": [
+    {
+      "zoom": 0.45,
+      "strokeWidth": 5.71,
+      "corrSize": 46,
+      "explSize": 30
+    },
+    {
+      "zoom": 0.75,
+      "strokeWidth": 4.1,
+      "corrSize": 32,
+      "explSize": 21
+    },
+    {
+      "zoom": 1,
+      "strokeWidth": 3.4,
+      "corrSize": 26,
+      "explSize": 17
+    },
+    {
+      "zoom": 1.5,
+      "strokeWidth": 3.07,
+      "corrSize": 23,
+      "explSize": 15
+    },
+    {
+      "zoom": 2,
+      "strokeWidth": 2.89,
+      "corrSize": 21,
+      "explSize": 15
+    }
+  ],
+  "checks": {
+    "fontLoaded": {
+      "preEpoch": 2,
+      "epoch": 3,
+      "tspanCount": 56,
+      "families": [
+        "'Gaegu', 'Noto Sans KR', sans-serif",
+        "'Playpen Sans', 'Be Vietnam Pro', sans-serif",
+        "'Be Vietnam Pro', 'Noto Sans KR', sans-serif"
+      ],
+      "cloudsClosed": [
+        "1.00",
+        "1.00",
+        "1.00"
+      ]
+    },
+    "queueAndInkDuringAnim": {
+      "timings": {
+        "mix_ann_6_0": {
+          "cloudMs": 471,
+          "pauseAfterCloudMs": 39,
+          "arrowMs": 193,
+          "pauseBeforeExplMs": 39,
+          "corrMs": 223,
+          "explMs": 302,
+          "totalAnimMs": 1267,
+          "queueMultiplier": 0.55,
+          "speedFactor": 1,
+          "startedAtMs": 1795747703364,
+          "cloudDoneAtMs": 1795747703875,
+          "actualCloudMs": 511,
+          "actualTextMs": 849
+        },
+        "mix_ann_6_1": {
+          "cloudMs": 717,
+          "pauseAfterCloudMs": 55,
+          "arrowMs": 156,
+          "pauseBeforeExplMs": 55,
+          "corrMs": 316,
+          "explMs": 400,
+          "totalAnimMs": 1699,
+          "queueMultiplier": 0.78,
+          "speedFactor": 1,
+          "startedAtMs": 1795747704740,
+          "cloudDoneAtMs": 1795747705474,
+          "actualCloudMs": 734,
+          "actualTextMs": 1022
+        },
+        "mix_ann_6_2": {
+          "cloudMs": 752,
+          "pauseAfterCloudMs": 55,
+          "arrowMs": 156,
+          "pauseBeforeExplMs": 55,
+          "corrMs": 351,
+          "explMs": 466,
+          "totalAnimMs": 1835,
+          "queueMultiplier": 0.78,
+          "speedFactor": 1,
+          "startedAtMs": 1795747706513,
+          "cloudDoneAtMs": 1795747707263,
+          "actualCloudMs": 750,
+          "actualTextMs": 1146
+        },
+        "mix_ann_6_3": {
+          "cloudMs": 981,
+          "pauseAfterCloudMs": 70,
+          "arrowMs": 200,
+          "pauseBeforeExplMs": 70,
+          "corrMs": 540,
+          "explMs": 417,
+          "totalAnimMs": 2278,
+          "queueMultiplier": 1,
+          "speedFactor": 1,
+          "startedAtMs": 1795747708426,
+          "cloudDoneAtMs": 1795747709411,
+          "actualCloudMs": 985,
+          "actualTextMs": 1366
+        }
+      },
+      "strokes": 5,
+      "completed": 4
+    },
+    "reducedMotion": true,
+    "reloadPreserved": {
+      "annotations": 1,
+      "strokes": 1
+    }
+  }
+}
