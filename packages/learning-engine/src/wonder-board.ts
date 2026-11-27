@@ -1624,11 +1624,13 @@ export function segmentStrokesIntoRegions(strokes: WonderStroke[]): Array<{
       return ay - by || a.bbox.minX - b.bbox.minX;
     });
 
-  // Step 2: Merge horizontally collinear word islands belonging to the same writing line
-  const lineGroups: WonderStroke[][] = [];
+  // Step 2: Merge horizontally collinear word islands belonging to the same writing line,
+  // then split each Y-line left-to-right only at wide column gaps (> max(160, 1.6*maxH))
+  // so 3+ word sentences stay unified while distant columns remain separate regions.
+  const yBandGroups: Array<typeof islands> = [];
   for (const isl of islands) {
     const sCy = (isl.bbox.minY + isl.bbox.maxY) / 2;
-    const match = lineGroups.find((g) => {
+    const match = yBandGroups.find((g) => {
       const box = mergeBoundingBoxes(g.map((x) => x.bbox));
       const gCy = (box.minY + box.maxY) / 2;
       const maxH = Math.max(box.height, isl.bbox.height);
@@ -1637,9 +1639,40 @@ export function segmentStrokesIntoRegions(strokes: WonderStroke[]): Array<{
       return Math.abs(sCy - gCy) <= Math.max(36, maxH * 0.42) || overlapY >= minH * 0.5;
     });
     if (match) {
-      match.push(...isl.strokes);
+      match.push(isl);
     } else {
-      lineGroups.push([...isl.strokes]);
+      yBandGroups.push([isl]);
+    }
+  }
+
+  const lineGroups: WonderStroke[][] = [];
+  for (const band of yBandGroups) {
+    const sortedByX = [...band].sort((a, b) => a.bbox.minX - b.bbox.minX);
+    let currentGroup: WonderStroke[] = [];
+    let currentMaxX = -Infinity;
+    let currentMaxH = 0;
+    for (const isl of sortedByX) {
+      if (currentGroup.length === 0) {
+        currentGroup = [...isl.strokes];
+        currentMaxX = isl.bbox.maxX;
+        currentMaxH = isl.bbox.height;
+        continue;
+      }
+      const gap = isl.bbox.minX - currentMaxX;
+      const maxH = Math.max(currentMaxH, isl.bbox.height);
+      if (gap > Math.max(160, maxH * 1.6)) {
+        lineGroups.push(currentGroup);
+        currentGroup = [...isl.strokes];
+        currentMaxX = isl.bbox.maxX;
+        currentMaxH = isl.bbox.height;
+      } else {
+        currentGroup.push(...isl.strokes);
+        currentMaxX = Math.max(currentMaxX, isl.bbox.maxX);
+        currentMaxH = maxH;
+      }
+    }
+    if (currentGroup.length > 0) {
+      lineGroups.push(currentGroup);
     }
   }
 
@@ -1788,8 +1821,8 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
     const aspect = sw / Math.max(1, sh);
     if (
       (endDist < diag * 0.58 || Math.abs(totalTurn) >= Math.PI * 1.55) &&
-      aspect >= 0.28 &&
-      aspect <= 2.6 &&
+      aspect >= 0.22 &&
+      aspect <= 2.8 &&
       sh >= 12
     ) {
       return mk('LOOP');
@@ -1855,10 +1888,32 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
     }
   }
 
-  if (sh >= sw * 2.2) {
+  // Compute unpadded point span so visualPad does not obscure short human ticks (e.g. ㅏ/ㅓ/ㅗ)
+  let rawMinX = Infinity;
+  let rawMaxX = -Infinity;
+  let rawMinY = Infinity;
+  let rawMaxY = -Infinity;
+  for (const p of pts) {
+    const px = p.x + dx;
+    const py = p.y + dy;
+    if (px < rawMinX) rawMinX = px;
+    if (px > rawMaxX) rawMaxX = px;
+    if (py < rawMinY) rawMinY = py;
+    if (py > rawMaxY) rawMaxY = py;
+  }
+  const rawW = Math.max(0, rawMaxX - rawMinX);
+  const rawH = Math.max(0, rawMaxY - rawMinY);
+
+  if (
+    (rawH >= Math.max(1, rawW) * 1.85 && rawH >= 6) ||
+    sh >= sw * 2.2
+  ) {
     return mk('VERT');
   }
-  if (sw >= sh * 2.0) {
+  if (
+    (rawW >= Math.max(1, rawH) * 1.65 && rawW >= 6) ||
+    sw >= sh * 2.0
+  ) {
     return mk('HORIZ');
   }
 
@@ -2634,6 +2689,13 @@ export function recognizeHandwritingRegions(
         : [];
     const allJamoMatched =
       jamoWordMatches.length > 0 && jamoWordMatches.every((m) => m !== null);
+    const matchedJamoItems = jamoWordMatches
+      .map((match, cIdx) => (match ? { match, cluster: seg.wordClusters[cIdx] } : null))
+      .filter(
+        (x): x is { match: { text: string; confidence: number }; cluster: WonderStroke[] } =>
+          x !== null
+      );
+    const isPartialJamoMatch = !allJamoMatched && matchedJamoItems.length > 0;
 
     let recognizedText = '';
     let confidence = 0.35;
@@ -2658,6 +2720,12 @@ export function recognizeHandwritingRegions(
       recognizedText = validMatches.map((m) => m.text).join(' ');
       confidence =
         validMatches.reduce((acc, m) => acc + m.confidence, 0) / validMatches.length;
+      providerId = 'local-freehand-jamo';
+    } else if (isPartialJamoMatch) {
+      recognizedText = matchedJamoItems.map((m) => m.match.text).join(' ');
+      confidence =
+        matchedJamoItems.reduce((acc, m) => acc + m.match.confidence, 0) /
+        matchedJamoItems.length;
       providerId = 'local-freehand-jamo';
     }
 
@@ -2686,8 +2754,10 @@ export function recognizeHandwritingRegions(
       return;
     }
 
-    // Align tokens directly to segmented word stroke clusters
-    const words = recognizedText.split(/\s+/);
+    // Align tokens directly to segmented word stroke clusters (or matched clusters on partial line recognition)
+    const words = isPartialJamoMatch
+      ? matchedJamoItems.map((m) => m.match.text)
+      : recognizedText.split(/\s+/);
     const spans: WonderRecognitionSpan[] = [];
     const characterSpans: WonderRecognitionSpan[] = [];
     let cursor = 0;
@@ -2698,15 +2768,16 @@ export function recognizeHandwritingRegions(
       const endIndex = startIndex + word.length;
       cursor = endIndex;
 
-      const cluster =
-        seg.wordClusters.length === words.length
+      const cluster = isPartialJamoMatch
+        ? matchedJamoItems[wIdx].cluster
+        : seg.wordClusters.length === words.length
           ? seg.wordClusters[wIdx]
           : seg.wordClusters[
-          Math.min(
-            seg.wordClusters.length - 1,
-            Math.floor((wIdx / Math.max(1, words.length)) * seg.wordClusters.length)
-          )
-          ];
+              Math.min(
+                seg.wordClusters.length - 1,
+                Math.floor((wIdx / Math.max(1, words.length)) * seg.wordClusters.length)
+              )
+            ];
 
       const wordBox = mergeBoundingBoxes(cluster.map((s) => s.bbox));
       spans.push({
@@ -2762,7 +2833,7 @@ export function recognizeHandwritingRegions(
       completeness,
       recognitionStatus: fragmentIncomplete
         ? 'IN_PROGRESS'
-        : confidence < 0.62
+        : isPartialJamoMatch || confidence < 0.62
           ? 'PARTIALLY_RECOGNIZED'
           : 'RECOGNIZED',
       provenance,

@@ -718,70 +718,103 @@ export function orchestrateWonderTutor(params: {
     }
 
     // 5. Fallback / Core Korean pedagogy & unseen copula/particle grammar analysis
-    // Provide helpful single-word explanation if learner writes a standalone vocabulary word (e.g. 고마워)
+    // Provide helpful explanation for standalone Korean words/syllables OR side-by-side practice items (e.g. "사 아")
+    const isPracticeList =
+      reg.spans.length >= 2 &&
+      !/[.!?]$/.test(txt.trim()) &&
+      reg.spans.every((sp) => {
+        const t = sp.text.trim();
+        if (!/^[\uAC00-\uD7A3]{1,3}$/.test(t)) return false;
+        if (
+          t.length >= 2 &&
+          /(요|다|니다|까요|세요|예요|이에요|은|는|이|가|을|를|에서|에)$/.test(t)
+        ) {
+          return false;
+        }
+        return true;
+      });
     if (
       (reg.language === 'ko' || reg.language === 'mixed') &&
-      primaryIntent.intent === 'PRACTICE_VOCABULARY' &&
+      (primaryIntent.intent === 'PRACTICE_VOCABULARY' || isPracticeList) &&
       (board.aiMode === 'tutor' || board.aiMode === 'discovery' || board.aiMode === 'review')
     ) {
-      const desc = describeKoreanSyllableOrWordVi(txt);
-      if (desc) {
-        const dupWord = existingAnnotations.some(
-          (a) =>
-            (a.status === 'active' || a.status === 'dismissed') &&
-            a.target_text === txt &&
-            a.source_stroke_ids.some((id) => reg.strokeIds.includes(id))
-        );
-        if (!dupWord) {
-          const isTall = reg.bbox.height > 120;
-          const desiredWidth = Math.max(300, Math.min(460, Math.round(reg.bbox.height * 1.25)));
-          const desiredHeight = Math.max(134, Math.min(220, Math.round(reg.bbox.height * 0.68)));
-          const { noteBox, placement, arrow } = computeCollisionFreePlacement({
-            targetBox: reg.bbox,
-            desiredWidth,
-            desiredHeight,
-            preferredOrder: isTall
-              ? ['right', 'left', 'above', 'below']
-              : ['right', 'below', 'above', 'left'],
-            occupiedBoxes,
-          });
-          occupiedBoxes.push(noteBox);
-          const sortedRegIds = [...reg.strokeIds].sort().join(',');
-          annotationsToAdd.push({
-            annotation_id: `ann_${board.id}_vocab_${reg.regionId}`,
-            stable_key: `${board.id}__explanation__vocabulary__${txt}__${sortedRegIds || '0'}`,
-            cloud_seed: hashString(txt) + 7,
-            board_id: board.id,
-            source_revision: reg.revision,
-            source_stroke_ids: reg.strokeIds,
-            recognized_text: txt,
-            target_text: txt,
-            target_span: { start: 0, end: txt.length },
-            target_geometry: reg.bbox,
-            note_geometry: noteBox,
-            arrow_path: arrow,
-            annotation_type: 'explanation',
-            linguistic_category: 'vocabulary',
-            severity: 'info',
-            confidence: reg.confidence,
-            suggested_correction: desc.header,
-            explanation: desc.explanation,
-            hint: desc.hint,
-            visual_style: { shape: 'scalloped_cloud', accentColor: theme.aiSupportHex },
-            placement_preference: placement,
-            learning_concept_ids: ['kc_lexicon_hanja'],
-            created_at: Date.now(),
-            status: 'active',
-            lifecycle_state: 'queued',
-            animation_progress: {
-              cloud: 0,
-              arrow: 0,
-              correction: 0,
-              explanation: 0,
-              completed: false,
-            },
-          });
-        }
+      const units =
+        primaryIntent.intent === 'PRACTICE_VOCABULARY' || reg.spans.length <= 1
+          ? [{ text: txt, bbox: reg.bbox, strokeIds: reg.strokeIds, spanStart: 0, spanEnd: txt.length }]
+          : reg.spans.map((sp) => ({
+              text: sp.text,
+              bbox: sp.bbox,
+              strokeIds: sp.strokeIds.length > 0 ? sp.strokeIds : reg.strokeIds,
+              spanStart: sp.startIndex,
+              spanEnd: sp.endIndex,
+            }));
+
+      for (let uIdx = 0; uIdx < units.length; uIdx++) {
+        const unit = units[uIdx];
+        const desc = describeKoreanSyllableOrWordVi(unit.text);
+        if (!desc) continue;
+        const dupWord =
+          existingAnnotations.some(
+            (a) =>
+              (a.status === 'active' || a.status === 'dismissed') &&
+              a.target_text === unit.text &&
+              a.source_stroke_ids.some((id) => unit.strokeIds.includes(id))
+          ) ||
+          annotationsToAdd.some(
+            (a) =>
+              a.target_text === unit.text &&
+              a.source_stroke_ids.some((id) => unit.strokeIds.includes(id))
+          );
+        if (dupWord) continue;
+
+        const isTall = unit.bbox.height > 120;
+        const desiredWidth = Math.max(300, Math.min(460, Math.round(unit.bbox.height * 1.25)));
+        const desiredHeight = Math.max(134, Math.min(220, Math.round(unit.bbox.height * 0.68)));
+        const { noteBox, placement, arrow } = computeCollisionFreePlacement({
+          targetBox: unit.bbox,
+          desiredWidth,
+          desiredHeight,
+          preferredOrder: isTall
+            ? ['right', 'left', 'above', 'below']
+            : ['below', 'right', 'above', 'left'],
+          occupiedBoxes,
+        });
+        occupiedBoxes.push(noteBox);
+        const sortedRegIds = [...unit.strokeIds].sort().join(',');
+        annotationsToAdd.push({
+          annotation_id: `ann_${board.id}_vocab_${reg.regionId}_${uIdx}`,
+          stable_key: `${board.id}__explanation__vocabulary__${unit.text}__${sortedRegIds || '0'}`,
+          cloud_seed: hashString(unit.text) + 7 + uIdx,
+          board_id: board.id,
+          source_revision: reg.revision,
+          source_stroke_ids: unit.strokeIds,
+          recognized_text: txt,
+          target_text: unit.text,
+          target_span: { start: unit.spanStart, end: unit.spanEnd },
+          target_geometry: unit.bbox,
+          note_geometry: noteBox,
+          arrow_path: arrow,
+          annotation_type: 'explanation',
+          linguistic_category: 'vocabulary',
+          severity: 'info',
+          confidence: reg.confidence,
+          suggested_correction: desc.header,
+          explanation: desc.explanation,
+          hint: desc.hint,
+          visual_style: { shape: 'scalloped_cloud', accentColor: theme.aiSupportHex },
+          placement_preference: placement,
+          learning_concept_ids: ['kc_lexicon_hanja'],
+          created_at: Date.now() + uIdx,
+          status: 'active',
+          lifecycle_state: 'queued',
+          animation_progress: {
+            cloud: 0,
+            arrow: 0,
+            correction: 0,
+            explanation: 0,
+            completed: false,
+          },
+        });
       }
     }
 
@@ -902,13 +935,11 @@ export function orchestrateWonderTutor(params: {
     }
   }
 
-  // Cognitive-load gating: keep top N actions active, store overflow cleanly in deferredActions!
+  // Cognitive-load gating: throttle strictly under beginner_friendly (max 1 concurrent error),
+  // while guided/detailed modes display multi-sentence errors across the board up to batch cap.
   const budget = getActionBudgetForGuidance(guidanceLevel);
   const errorAndFeedbackAnns = combinedCandidates;
-  const activeExistingCount = existingAnnotations.filter(
-    (a) => a.status === 'active' && !resolvedAnnotationIds.includes(a.annotation_id)
-  ).length;
-  const remainingSlots = Math.max(0, Math.max(budget, 3) - activeExistingCount);
+  const maxBatchErrors = Math.max(4, budget + 2);
 
   const scheduledAnns: WonderAnnotation[] = [];
   const deferredActions: WonderBoardAction[] = [...(board.deferredActions ?? [])].slice(-12);
@@ -917,7 +948,7 @@ export function orchestrateWonderTutor(params: {
     const isDeferred =
       guidanceLevel === 'beginner_friendly' && idx >= 1 && ann.severity === 'error'
         ? true
-        : idx >= Math.max(1, remainingSlots + 2) && ann.severity === 'error';
+        : idx >= maxBatchErrors && ann.severity === 'error';
 
     const action = makeValidatedAction({
       actionId: `act_${ann.annotation_id}`,

@@ -49,7 +49,7 @@ export async function POST(req) {
 
   const studentRegions = Array.isArray(body.regions)
     ? body.regions
-        .slice(0, 8)
+        .slice(0, 12)
         .filter((r) => r && typeof r.recognizedText === 'string' && r.recognizedText.trim().length > 0)
         .map((r) => ({
           regionId: String(r.regionId || ''),
@@ -71,7 +71,7 @@ export async function POST(req) {
           ? 'Intent is GRAMMAR_CHECK: if there is any Korean spelling/particle/tense/naturalness error emit DRAW_CLOUD with suggestedCorrection + explanation; if correct emit DRAW_CHECKMARK with brief praise and grammar confirmation in explanation.'
           : intent === 'practice_exercise'
             ? 'Intent is PRACTICE_EXERCISE: emit WRITE_EXAMPLE giving 1 short fill-in-the-blank or sentence-building practice prompt in Korean/Vietnamese.'
-            : 'Intent is AMBIENT: if there is a Korean mistake, emit DRAW_CLOUD with suggestedCorrection + explanation; if it is a valid Korean word/sentence or Vietnamese question about Korean, emit WRITE_EXPLANATION (or DRAW_CHECKMARK if clearly a correct Korean sentence) with useful Vietnamese feedback. Only return {"actions":[]} for unreadable gibberish.';
+            : 'Intent is AMBIENT: analyze ALL provided student regions independently. When multiple regions/sentences/words are present, emit up to 6 actions (one per distinct region needing correction via DRAW_CLOUD or helpful Vietnamese explanation/confirmation via WRITE_EXPLANATION / DRAW_CHECKMARK), preserving each exact regionId. Only return {"actions":[]} for unreadable gibberish.';
 
   const systemInstruction = [
     'You are SEED Korean SLA Tutor on Wonder Board for Vietnamese learners.',
@@ -97,7 +97,7 @@ export async function POST(req) {
       body: JSON.stringify({
         model: upstream.model,
         temperature: 0.2,
-        max_tokens: 450,
+        max_tokens: 900,
         messages: [
           { role: 'system', content: systemInstruction },
           {
@@ -125,7 +125,7 @@ export async function POST(req) {
     const safeActions = Array.isArray(parsed.actions)
       ? parsed.actions
           .filter((a) => a && ALLOWED_ACTION_TYPES.has(a.type) && typeof a.targetText === 'string')
-          .slice(0, 4)
+          .slice(0, 8)
           .map((a) => ({
             type: a.type,
             regionId: typeof a.regionId === 'string' ? a.regionId : '',

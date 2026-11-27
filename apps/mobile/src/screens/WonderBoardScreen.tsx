@@ -1957,10 +1957,11 @@ export function WonderBoardScreen({
       const regionsNeedingServerTutor = recognizedRegionsForServer.filter((r) => {
         const alreadyCovered = r.strokeIds.some((id) => localErrorStrokeIds.has(id));
         if (alreadyCovered) return false;
-        if (!forceReview && (tutorRes.teachingCardsToAdd.length > 0 || tutorRes.hangulDemosToAdd.length > 0)) {
-          return false;
-        }
-        return true;
+        const coveredByTeachingCard =
+          !forceReview &&
+          tutorRes.teachingCardsToAdd.some((c) => c.sourceRevision === r.revision) &&
+          recognizedRegionsForServer.length === 1;
+        return !coveredByTeachingCard;
       });
       const canCallServerTutor =
         Boolean(serverHealthRef.current?.tutorReady) || Boolean(priv.gatewayUrl.trim());
@@ -1995,7 +1996,7 @@ export function WonderBoardScreen({
               act.targetText.length > 0 &&
               act.explanation.length > 0
           )
-          .slice(0, 2)
+          .slice(0, 6)
           .flatMap((act, idx) => {
             const matchedRegion =
               regionsNeedingServerTutor.find((r) => r.regionId === act.regionId) ??

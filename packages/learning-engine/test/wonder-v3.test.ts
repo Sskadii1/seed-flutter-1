@@ -1261,3 +1261,123 @@ test('V3-13 Hotfix: Mixed-language font runs, adaptive typography bounds, fast c
   };
   assert.equal(boxesIntersect(arrowEndBox, placed.noteBox, 2), false, 'Arrowhead must stop outside noteBox');
 });
+
+test('V3-14 Multi-word & multi-sentence support + freehand short-tick recognition', () => {
+  const mkStroke = (id: string, pts: Array<{ x: number; y: number }>) => {
+    const full = pts.map((p, i) => ({ ...p, pressure: 0.5, t: i * 10 }));
+    return {
+      id,
+      boardId: 'b_multi',
+      points: full,
+      color: '#2C221E',
+      width: 3.4,
+      tool: 'chalk' as const,
+      bbox: computeStrokeBoundingBox(full, 0, 0, 3.4, 'chalk'),
+      transform: { dx: 0, dy: 0 },
+      revision: 1,
+      createdAt: Date.now(),
+      provenance: 'freehand_ink' as const,
+    };
+  };
+
+  // 1. Freehand 사 (left) + tall-narrow 아 with short wobbly horizontal tick (right)
+  const strokes = [
+    // 사 at x=80..180
+    mkStroke('sa1', [{ x: 112, y: 120 }, { x: 80, y: 210 }]),
+    mkStroke('sa2', [{ x: 102, y: 162 }, { x: 128, y: 210 }]),
+    mkStroke('sa3', [{ x: 152, y: 115 }, { x: 152, y: 225 }]),
+    mkStroke('sa4', [{ x: 152, y: 168 }, { x: 174, y: 170 }]),
+    // 아 at x=460..560 (tall narrow ㅇ + slightly wobbly short tick ㅏ)
+    mkStroke(
+      'a1',
+      Array.from({ length: 14 }, (_, k) => {
+        const a = (k / 13) * Math.PI * 1.9;
+        return { x: 488 + Math.cos(a) * 20, y: 165 + Math.sin(a) * 58 };
+      })
+    ),
+    mkStroke('a2', [{ x: 528, y: 112 }, { x: 528, y: 230 }]),
+    mkStroke('a3', [{ x: 528, y: 164 }, { x: 544, y: 167 }]),
+  ];
+
+  const regs = recognizeHandwritingRegions(strokes, 'b_multi', 1);
+  assert.equal(regs.length, 2, `Expected 2 separate regions for 사 and 아, got ${regs.length}`);
+  const byX = [...regs].sort((a, b) => a.bbox.minX - b.bbox.minX);
+  assert.equal(byX[0].recognizedText, '사');
+  assert.equal(byX[1].recognizedText, '아');
+
+  const board = { ...createEmptyWonderBoard('b_multi'), strokes, regions: regs, revision: 1 };
+  const ctx = buildBoardContextModel({
+    boardId: board.id,
+    revision: 1,
+    regions: regs,
+    strokes,
+    existingAnnotations: [],
+    existingTeachingCards: [],
+  });
+  const tutor = orchestrateWonderTutor({
+    board,
+    regions: regs,
+    context: ctx,
+    existingAnnotations: [],
+    existingTeachingCards: [],
+    learnerProfile: createInitialAiProfile(),
+  });
+  assert.equal(tutor.annotationsToAdd.length, 2, 'Both 사 and 아 must receive clouds/explanations');
+  assert.equal(
+    boxesIntersect(tutor.annotationsToAdd[0].note_geometry, tutor.annotationsToAdd[1].note_geometry, 2),
+    false,
+    'Separate word notes must not overlap'
+  );
+
+  // 2. Multi-sentence board (3 distinct sentences under default guided mode) -> all 3 annotated!
+  const b3 = createEmptyWonderBoard('b_multi_sent');
+  b3.guidanceLevel = 'guided';
+  b3.strokes = [
+    ...generateHandwrittenStrokesForText({
+      boardId: b3.id,
+      text: '저는 어제 학교에 가요.',
+      startX: 60,
+      startY: 70,
+      revision: 1,
+      color: '#2C221E',
+      provenance: 'fixture_sample',
+    }),
+    ...generateHandwrittenStrokesForText({
+      boardId: b3.id,
+      text: '저는 사과가 먹어요.',
+      startX: 60,
+      startY: 240,
+      revision: 1,
+      color: '#2C221E',
+      provenance: 'fixture_sample',
+    }),
+    ...generateHandwrittenStrokesForText({
+      boardId: b3.id,
+      text: '저는 학생예요.',
+      startX: 60,
+      startY: 410,
+      revision: 1,
+      color: '#2C221E',
+      provenance: 'fixture_sample',
+    }),
+  ];
+  const r3 = recognizeHandwritingRegions(b3.strokes, b3.id, 1);
+  assert.equal(r3.length, 3);
+  const ctx3 = buildBoardContextModel({
+    boardId: b3.id,
+    revision: 1,
+    regions: r3,
+    strokes: b3.strokes,
+    existingAnnotations: [],
+    existingTeachingCards: [],
+  });
+  const t3 = orchestrateWonderTutor({
+    board: { ...b3, regions: r3, revision: 1 },
+    regions: r3,
+    context: ctx3,
+    existingAnnotations: [],
+    existingTeachingCards: [],
+    learnerProfile: createInitialAiProfile(),
+  });
+  assert.ok(t3.annotationsToAdd.length >= 3, `Expected >= 3 sentence annotations, got ${t3.annotationsToAdd.length}`);
+});

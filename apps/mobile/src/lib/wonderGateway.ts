@@ -225,7 +225,7 @@ export async function requestWonderServerTutor(params: {
       signal: params.signal,
       headers,
       body: JSON.stringify({
-        regions: params.regions.slice(0, 8),
+        regions: params.regions.slice(0, 12),
         guidanceLevel: params.guidanceLevel,
         intent: params.intent ?? 'ambient',
       }),
