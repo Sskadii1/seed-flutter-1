@@ -117,6 +117,72 @@ export function renderRegionInkCropDataUrl(
   };
 }
 
+export interface WonderServerTutorAction {
+  type: 'DRAW_CLOUD' | 'WRITE_EXPLANATION' | 'WRITE_EXAMPLE' | 'DRAW_CHECKMARK' | 'WAIT';
+  regionId: string;
+  targetText: string;
+  suggestedCorrection: string;
+  explanation: string;
+  hint: string;
+}
+
+/**
+ * Queries /api/wonder/tutor (same-origin on Vercel or configured gatewayUrl)
+ * to generate pedagogical feedback from server-side DeepSeek / Gemini / OpenAI
+ * for recognized board regions without exposing any secret keys in browser bundles.
+ */
+export async function requestWonderServerTutor(params: {
+  regions: Array<{ regionId: string; recognizedText: string; language: string }>;
+  guidanceLevel: string;
+  gatewayUrl?: string;
+  gatewayToken?: string;
+  signal?: AbortSignal;
+}): Promise<{ actions: WonderServerTutorAction[]; providerId: string }> {
+  const gFetch = (globalThis as unknown as { fetch?: typeof fetch }).fetch;
+  if (typeof gFetch !== 'function' || params.regions.length === 0) {
+    return { actions: [], providerId: 'offline' };
+  }
+
+  const gLoc = (globalThis as unknown as { location?: { origin?: string } }).location;
+  const cleanGateway = (params.gatewayUrl ?? '').trim().replace(/\/+$/, '');
+  const endpoint = cleanGateway
+    ? `${cleanGateway}/api/wonder/tutor`
+    : gLoc?.origin && /^https?:/i.test(gLoc.origin)
+    ? '/api/wonder/tutor'
+    : '';
+  if (!endpoint) return { actions: [], providerId: 'offline' };
+
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (params.gatewayToken?.trim()) {
+      headers.Authorization = `Bearer ${params.gatewayToken.trim()}`;
+    }
+    const resp = await gFetch(endpoint, {
+      method: 'POST',
+      signal: params.signal,
+      headers,
+      body: JSON.stringify({
+        regions: params.regions.slice(0, 8),
+        guidanceLevel: params.guidanceLevel,
+      }),
+    });
+    const ct = resp.headers?.get?.('content-type') || '';
+    if (!resp.ok || !ct.includes('application/json')) {
+      return { actions: [], providerId: `unavailable_${resp.status}` };
+    }
+    const raw = (await resp.json()) as {
+      actions?: WonderServerTutorAction[];
+      providerId?: string;
+    };
+    return {
+      actions: Array.isArray(raw.actions) ? raw.actions : [],
+      providerId: String(raw.providerId || 'vercel-tutor'),
+    };
+  } catch {
+    return { actions: [], providerId: 'unavailable' };
+  }
+}
+
 export function createBrowserVisionProvider(
   cfg: BrowserVisionConfig
 ): HandwritingRecognitionProvider | undefined {

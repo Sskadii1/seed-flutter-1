@@ -11,7 +11,7 @@ import {
 } from '@seed/learning-engine';
 import { SeedLearningState, getEffectiveNow } from '../store/learningStore';
 
-export type AiProvider = 'auto' | 'openai' | 'gemini';
+export type AiProvider = 'auto' | 'deepseek' | 'openai' | 'gemini';
 
 export interface AiApiConfig {
   provider: AiProvider;
@@ -24,7 +24,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   koreanSample?: string;
-  source?: 'openai' | 'gemini' | 'local';
+  source?: 'deepseek' | 'openai' | 'gemini' | 'local';
   timestamp: number;
 }
 
@@ -85,7 +85,9 @@ export function loadAiApiConfig(): AiApiConfig {
     const parsed = JSON.parse(raw) as Partial<AiApiConfig>;
     return {
       provider:
-        parsed.provider === 'openai' || parsed.provider === 'gemini'
+        parsed.provider === 'deepseek' ||
+        parsed.provider === 'openai' ||
+        parsed.provider === 'gemini'
           ? parsed.provider
           : 'auto',
       apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
@@ -113,9 +115,12 @@ export function saveAiApiConfig(config: AiApiConfig): void {
   }
 }
 
-export function resolveProvider(config: AiApiConfig): 'openai' | 'gemini' | null {
+export function resolveProvider(
+  config: AiApiConfig
+): 'deepseek' | 'openai' | 'gemini' | null {
   const key = config.apiKey.trim();
   if (!key) return null;
+  if (config.provider === 'deepseek') return 'deepseek';
   if (config.provider === 'openai') return 'openai';
   if (config.provider === 'gemini') return 'gemini';
   if (key.startsWith('AIza')) return 'gemini';
@@ -622,19 +627,26 @@ export async function askAiTutor(params: {
 }): Promise<{
   text: string;
   koreanSample?: string;
-  source: 'openai' | 'gemini' | 'local';
+  source: 'deepseek' | 'openai' | 'gemini' | 'local';
   fallbackReason?: string;
 }> {
   const provider = resolveProvider(params.apiConfig);
   const key = params.apiConfig.apiKey.trim();
+  const systemPrompt = buildPedagogicalSystemPrompt(params.state);
 
   if (provider && key) {
-    const systemPrompt = buildPedagogicalSystemPrompt(params.state);
     const endpoint =
-      provider === 'gemini'
+      provider === 'deepseek'
+        ? 'https://api.deepseek.com/chat/completions'
+        : provider === 'gemini'
         ? 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
         : 'https://api.openai.com/v1/chat/completions';
-    const defaultModel = provider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o-mini';
+    const defaultModel =
+      provider === 'deepseek'
+        ? 'deepseek-chat'
+        : provider === 'gemini'
+        ? 'gemini-2.5-flash'
+        : 'gpt-4o-mini';
     const model = params.apiConfig.model?.trim() || defaultModel;
 
     try {
@@ -660,6 +672,58 @@ export async function askAiTutor(params: {
         source: 'local',
         fallbackReason: reason,
       };
+    }
+  }
+
+  // Try same-origin Vercel serverless AI endpoint (/api/ai/chat) automatically when no local key is set
+  const fetchFn = getFetch() as
+    | ((
+        input: string,
+        init?: { method?: string; headers?: Record<string, string>; body?: string }
+      ) => Promise<{
+        ok: boolean;
+        status: number;
+        headers?: { get?(name: string): string | null };
+        json(): Promise<unknown>;
+      }>)
+    | null;
+  const gLoc = (globalThis as unknown as { location?: { origin?: string } }).location;
+  if (fetchFn && gLoc?.origin && /^https?:/i.test(gLoc.origin)) {
+    try {
+      const resp = await Promise.race([
+        fetchFn('/api/ai/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: params.query,
+            systemPrompt,
+            history: params.history.slice(-8).map((m) => ({ role: m.role, text: m.text })),
+          }),
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 14000)),
+      ]);
+      const ct = resp.headers?.get?.('content-type') || '';
+      if (resp.ok && ct.includes('application/json')) {
+        const data = (await resp.json()) as {
+          reply?: string;
+          provider?: 'deepseek' | 'openai' | 'gemini';
+        };
+        if (typeof data.reply === 'string' && data.reply.trim().length > 0) {
+          const src =
+            data.provider === 'deepseek' ||
+            data.provider === 'gemini' ||
+            data.provider === 'openai'
+              ? data.provider
+              : 'deepseek';
+          return {
+            text: data.reply.trim(),
+            koreanSample: extractFirstKoreanPhrase(data.reply),
+            source: src,
+          };
+        }
+      }
+    } catch {
+      // Fall back silently to local deterministic SLA tutor when running static offline
     }
   }
 

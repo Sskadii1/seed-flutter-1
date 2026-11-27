@@ -5,7 +5,7 @@
   "outputDirectory": "apps/mobile/dist-web",
   "rewrites": [
     {
-      "source": "/((?!_expo/|favicon\\.ico).*)",
+      "source": "/((?!api/|_expo/|favicon\\.ico).*)",
       "destination": "/index.html"
     }
   ],

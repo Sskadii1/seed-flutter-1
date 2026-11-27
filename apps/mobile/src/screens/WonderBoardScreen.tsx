@@ -67,6 +67,7 @@ import { FONT_CHALK, FONT_SANS, waitForWonderFontsReady } from '../lib/typograph
 import {
   createBrowserVisionProvider,
   renderRegionInkCropDataUrl,
+  requestWonderServerTutor,
 } from '../lib/wonderGateway';
 import {
   WonderPrivacyConfig,
@@ -1672,7 +1673,8 @@ export function WonderBoardScreen({
         gatewayUrl: priv.gatewayUrl,
         gatewayToken: priv.gatewayToken,
         devDirectApiKey: apiCfg.apiKey,
-        devDirectProvider: resolvedProv ?? 'auto',
+        devDirectProvider:
+          resolvedProv === 'gemini' || resolvedProv === 'openai' ? resolvedProv : 'auto',
       });
 
       const perception = await recognizeWithHybridPipeline({
@@ -1765,6 +1767,115 @@ export function WonderBoardScreen({
         return;
       }
 
+      // If local deterministic SLA engine didn't add feedback for recognized regions,
+      // consult /api/wonder/tutor (server-side DeepSeek / Gemini / OpenAI) on online deployments.
+      let serverAnnotationsToAdd: WonderAnnotation[] = [];
+      const recognizedRegionsForServer = regions.filter(
+        (r) =>
+          (r.recognitionStatus === 'RECOGNIZED' || r.recognitionStatus === 'PARTIALLY_RECOGNIZED') &&
+          r.recognizedText.trim().length > 0 &&
+          r.completeness === 'complete'
+      );
+      if (
+        tutorRes.annotationsToAdd.length === 0 &&
+        tutorRes.teachingCardsToAdd.length === 0 &&
+        recognizedRegionsForServer.length > 0 &&
+        !forceReview
+      ) {
+        const serverTutor = await requestWonderServerTutor({
+          regions: recognizedRegionsForServer.map((r) => ({
+            regionId: r.regionId,
+            recognizedText: r.recognizedText,
+            language: r.language,
+          })),
+          guidanceLevel: effectiveBoard.guidanceLevel ?? 'guided',
+          gatewayUrl: priv.gatewayUrl,
+          gatewayToken: priv.gatewayToken,
+          signal: ac?.signal,
+        });
+        if (ac?.signal.aborted || latestBoardRef.current.revision !== targetRevision) {
+          return;
+        }
+        const alreadyOccupied = [
+          ...reconciled.filter((a) => a.status === 'active').map((a) => a.note_geometry),
+          ...effectiveBoard.teachingCards.map((c) => c.geometry),
+        ];
+        serverAnnotationsToAdd = serverTutor.actions
+          .filter(
+            (act) =>
+              (act.type === 'DRAW_CLOUD' || act.type === 'WRITE_EXPLANATION') &&
+              act.targetText.length > 0 &&
+              act.explanation.length > 0
+          )
+          .slice(0, 2)
+          .flatMap((act, idx) => {
+            const matchedRegion =
+              recognizedRegionsForServer.find((r) => r.regionId === act.regionId) ??
+              recognizedRegionsForServer.find((r) => r.recognizedText.includes(act.targetText)) ??
+              recognizedRegionsForServer[0];
+            if (!matchedRegion) return [];
+            const matchedSpan =
+              matchedRegion.spans.find((sp) => sp.text.includes(act.targetText)) ??
+              matchedRegion.spans[0];
+            const targetBox = matchedSpan?.bbox ?? matchedRegion.bbox;
+            const targetStrokeIds =
+              matchedSpan?.strokeIds && matchedSpan.strokeIds.length > 0
+                ? matchedSpan.strokeIds
+                : matchedRegion.strokeIds;
+            const isCorrection =
+              Boolean(act.suggestedCorrection) && act.suggestedCorrection !== act.targetText;
+            const placement = computeCollisionFreePlacement({
+              targetBox,
+              desiredWidth: 320,
+              desiredHeight: 112,
+              preferredOrder: ['below', 'right', 'above', 'left'],
+              occupiedBoxes: alreadyOccupied,
+            });
+            alreadyOccupied.push(placement.noteBox);
+            const ann: WonderAnnotation = {
+              annotation_id: `srv_ann_${targetRevision}_${idx}`,
+              stable_key: `${effectiveBoard.id}_srv_${targetStrokeIds.slice().sort().join('_')}`,
+              cloud_seed: idx + 1,
+              board_id: effectiveBoard.id,
+              source_revision: targetRevision,
+              source_stroke_ids: targetStrokeIds,
+              recognized_text: matchedRegion.recognizedText,
+              target_text: act.targetText,
+              target_span: {
+                start: matchedSpan?.startIndex ?? 0,
+                end: matchedSpan?.endIndex ?? act.targetText.length,
+              },
+              target_geometry: targetBox,
+              note_geometry: placement.noteBox,
+              arrow_path: placement.arrow,
+              annotation_type: isCorrection ? 'grammar_correction' : 'explanation',
+              linguistic_category: isCorrection ? 'naturalness' : 'vocabulary',
+              severity: isCorrection ? 'error' : 'info',
+              confidence: 0.9,
+              suggested_correction: act.suggestedCorrection || act.targetText,
+              explanation: act.explanation,
+              hint: act.hint,
+              visual_style: {
+                shape: 'scalloped_cloud',
+                accentColor: isCorrection ? theme.aiCorrectionHex : theme.aiSupportHex,
+              },
+              placement_preference: placement.placement,
+              learning_concept_ids: [],
+              created_at: Date.now() + idx,
+              status: 'active',
+              lifecycle_state: 'queued',
+              animation_progress: {
+                cloud: 0,
+                arrow: 0,
+                correction: 0,
+                explanation: 0,
+                completed: false,
+              },
+            };
+            return [ann];
+          });
+      }
+
       if (tutorRes.newEvents.length > 0) {
         onRecordLearningEvents(tutorRes.newEvents);
       }
@@ -1785,7 +1896,7 @@ export function WonderBoardScreen({
             .filter((a) => a.status === 'active' || a.status === 'dismissed')
             .map((a) => a.stable_key)
         );
-        const uniqueNew = tutorRes.annotationsToAdd.filter(
+        const uniqueNew = [...tutorRes.annotationsToAdd, ...serverAnnotationsToAdd].filter(
           (a) => !existingKeys.has(a.stable_key)
         );
         const recordedKeys = Array.from(

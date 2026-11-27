@@ -52,7 +52,8 @@ function createWelcomeMessage(state: SeedLearningState): ChatMessage {
   };
 }
 
-function getSourceLabel(source?: 'openai' | 'gemini' | 'local'): string {
+function getSourceLabel(source?: 'deepseek' | 'openai' | 'gemini' | 'local'): string {
+  if (source === 'deepseek') return 'SEED AI · DeepSeek';
   if (source === 'openai') return 'SEED AI · OpenAI';
   if (source === 'gemini') return 'SEED AI · Gemini';
   return 'SEED AI · Nội bộ';
@@ -73,19 +74,44 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
   const [showKeyboard, setShowKeyboard] = useState(false);
   const [jamoTokens, setJamoTokens] = useState<string[]>([]);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [serverProvider, setServerProvider] = useState<string | null>(null);
   const keyboardPrefixRef = useRef('');
   const scrollRef = useRef<ScrollView | null>(null);
   const lastCompletionSeqRef = useRef<number>(state.lessonCompletionSeq ?? 0);
 
   const coaching = buildMangaCoachingBubble(state);
 
+  useEffect(() => {
+    const gFetch = (globalThis as unknown as { fetch?: typeof fetch }).fetch;
+    if (typeof gFetch !== 'function') return;
+    gFetch('/api/wonder/health')
+      .then(async (r) => {
+        const ct = r.headers?.get?.('content-type') || '';
+        if (!r.ok || !ct.includes('application/json')) return;
+        const d = (await r.json()) as {
+          tutorReady?: boolean;
+          providers?: { deepseek?: boolean; gemini?: boolean; openai?: boolean };
+        };
+        if (d?.tutorReady) {
+          if (d.providers?.deepseek) setServerProvider('DeepSeek Server');
+          else if (d.providers?.gemini) setServerProvider('Gemini Server');
+          else if (d.providers?.openai) setServerProvider('OpenAI Server');
+        }
+      })
+      .catch(() => {
+        // Offline / static host without backend
+      });
+  }, []);
+
   const activeProvider = resolveProvider(apiConfig);
   const modePillLabel =
-    activeProvider === 'openai'
+    activeProvider === 'deepseek'
+      ? 'DeepSeek đang bật'
+      : activeProvider === 'openai'
       ? 'OpenAI đang bật'
       : activeProvider === 'gemini'
-        ? 'Gemini đang bật'
-        : 'Chế độ nội bộ';
+      ? 'Gemini đang bật'
+      : serverProvider ?? 'Chế độ nội bộ';
 
   const scrollToEndSoon = () => {
     setTimeout(() => {
@@ -232,13 +258,13 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
           <View
             style={[
               styles.statusPill,
-              activeProvider ? styles.statusPillLive : styles.statusPillLocal,
+              activeProvider || serverProvider ? styles.statusPillLive : styles.statusPillLocal,
             ]}
           >
             <View
               style={[
                 styles.statusDot,
-                activeProvider ? styles.statusDotLive : styles.statusDotLocal,
+                activeProvider || serverProvider ? styles.statusDotLive : styles.statusDotLocal,
               ]}
             />
             <Text style={styles.statusPillText}>{modePillLabel}</Text>
@@ -278,6 +304,7 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
             {(
               [
                 { key: 'auto', label: 'Tự động' },
+                { key: 'deepseek', label: 'DeepSeek' },
                 { key: 'openai', label: 'OpenAI' },
                 { key: 'gemini', label: 'Gemini' },
               ] as Array<{ key: AiProvider; label: string }>
@@ -317,7 +344,7 @@ export function AiTutorScreen({ state, focusCoachingSeq = 0 }: AiTutorScreenProp
               style={[styles.settingsInput, { flex: 1 }]}
               value={draftModel}
               onChangeText={setDraftModel}
-              placeholder="Model (mặc định: gpt-4o-mini / gemini-2.5-flash)"
+              placeholder="Model (mặc định: deepseek-chat / gpt-4o-mini / gemini-2.5-flash)"
               placeholderTextColor="#9A897E"
               autoCapitalize="none"
               autoCorrect={false}
