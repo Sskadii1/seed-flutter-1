@@ -131,6 +131,8 @@ export interface WonderViewport {
 
 export type WonderAiMode = 'gentle' | 'tutor' | 'discovery' | 'focus' | 'review';
 
+export type WonderTargetLanguage = 'auto' | 'ko' | 'en';
+
 export type WonderTeacherState =
   | 'OBSERVING'
   | 'RECOGNIZING'
@@ -172,6 +174,13 @@ export type WonderLearningIntentType =
   | 'PRACTICE_HANGUL'
   | 'PRACTICE_VOCABULARY'
   | 'PRACTICE_SENTENCE'
+  | 'REPEATED_CHARACTER_PRACTICE'
+  | 'REPEATED_WORD_PRACTICE'
+  | 'CONTRASTIVE_CHARACTER_PRACTICE'
+  | 'VOWEL_ORIENTATION_PRACTICE'
+  | 'CONSONANT_DISTINCTION_PRACTICE'
+  | 'HANDWRITING_IMPROVEMENT'
+  | 'UNKNOWN_PRACTICE_INTENT'
   | 'SELF_CORRECTION'
   | 'ANSWER_AI_EXERCISE'
   | 'FREE_DRAWING'
@@ -229,8 +238,35 @@ export const WonderVisionWordSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 
+export const WonderVisionContentTypeSchema = z.enum([
+  'single_character',
+  'hangul_syllable',
+  'word',
+  'phrase',
+  'sentence',
+  'paragraph',
+  'user_question',
+  'free_drawing',
+  'mixed_content',
+  'unknown',
+]);
+
+export type WonderVisionContentType = z.infer<typeof WonderVisionContentTypeSchema>;
+
+export const WonderVisionCompletenessStatusSchema = z.enum([
+  'complete',
+  'in_progress',
+  'fragment',
+  'non_text',
+  'unknown',
+]);
+
+export type WonderVisionCompletenessStatus = z.infer<
+  typeof WonderVisionCompletenessStatusSchema
+>;
+
 export const WonderVisionRecognitionResponseSchema = z.object({
-  recognizedText: z.string().max(400),
+  recognizedText: z.string().max(800),
   language: z.enum(['ko', 'vi', 'en', 'mixed', 'unknown']),
   recognitionStatus: z.enum([
     'RECOGNIZED',
@@ -244,10 +280,113 @@ export const WonderVisionRecognitionResponseSchema = z.object({
   confidence: z.number().min(0).max(1),
   alternatives: z.array(z.string().max(400)).max(6).default([]),
   words: z.array(WonderVisionWordSchema).max(60).default([]),
+  rawTranscription: z.string().max(800).optional(),
+  normalizedCandidate: z.string().max(800).optional(),
+  uncertainty: z.number().min(0).max(1).optional(),
+  completenessEvidence: z.string().max(240).optional(),
+  revision: z.number().int().nonnegative().optional(),
+  // Rich Section 8 Vision-First Perception fields (optional/defaulted for compatibility)
+  raw_transcription: z.string().max(800).optional(),
+  detected_languages: z.array(z.enum(['ko', 'vi', 'en', 'mixed', 'unknown'])).default([]),
+  recognized_regions: z
+    .array(
+      z.object({
+        text: z.string().max(400),
+        language: z.enum(['ko', 'vi', 'en', 'mixed', 'unknown']).default('unknown'),
+        bboxNorm: z
+          .object({
+            x0: z.number().min(0).max(1),
+            y0: z.number().min(0).max(1),
+            x1: z.number().min(0).max(1),
+            y1: z.number().min(0).max(1),
+          })
+          .optional(),
+        confidence: z.number().min(0).max(1).default(0.5),
+      })
+    )
+    .default([]),
+  uncertain_regions: z
+    .array(
+      z.object({
+        hint: z.string().max(200).default(''),
+        reason: z.string().max(240).default(''),
+        bboxNorm: z
+          .object({
+            x0: z.number().min(0).max(1),
+            y0: z.number().min(0).max(1),
+            x1: z.number().min(0).max(1),
+            y1: z.number().min(0).max(1),
+          })
+          .optional(),
+      })
+    )
+    .default([]),
+  alternative_candidates: z.array(z.string().max(400)).max(6).default([]),
+  content_type: WonderVisionContentTypeSchema.default('unknown'),
+  completeness_status: WonderVisionCompletenessStatusSchema.default('unknown'),
+  word_boundaries: z.array(z.string().max(120)).max(60).default([]),
+  sentence_boundaries: z.array(z.string().max(400)).max(24).default([]),
+  handwriting_quality_observations: z.array(z.string().max(200)).max(12).default([]),
+  estimated_uncertainty: z.number().min(0).max(1).optional(),
 });
 
 export type WonderVisionRecognitionResponse = z.infer<
   typeof WonderVisionRecognitionResponseSchema
+>;
+
+export const WonderSpatialTeachingActionTypeSchema = z.enum([
+  'WAIT',
+  'EXPLAIN_CHARACTER',
+  'EXPLAIN_WORD',
+  'MARK_GRAMMAR_ERROR',
+  'PROVIDE_HINT',
+  'WRITE_CORRECTION',
+  'WRITE_EXPLANATION',
+  'CREATE_EXAMPLE',
+  'CREATE_TRACE_GUIDE',
+  'DRAW_CLOUD',
+  'DRAW_ARROW',
+  'PRAISE',
+  'RETRACT_ANNOTATION',
+]);
+
+export type WonderSpatialTeachingActionType = z.infer<
+  typeof WonderSpatialTeachingActionTypeSchema
+>;
+
+export const WonderSpatialTeachingActionSchema = z.object({
+  actionId: z.string().min(1).max(80).default('act_auto'),
+  type: WonderSpatialTeachingActionTypeSchema,
+  regionId: z.string().max(120).default(''),
+  sourceRevision: z.number().int().nonnegative().default(0),
+  targetText: z.string().max(200).default(''),
+  semanticTarget: z
+    .enum(['character', 'syllable', 'word', 'phrase', 'sentence', 'region'])
+    .default('word'),
+  suggestedCorrection: z.string().max(240).default(''),
+  explanation: z.string().max(320).default(''),
+  hint: z.string().max(240).default(''),
+  confidence: z.number().min(0).max(1).default(0.8),
+  anchorHint: z.enum(['below', 'above', 'right', 'left']).default('below'),
+});
+
+export type WonderSpatialTeachingAction = z.infer<
+  typeof WonderSpatialTeachingActionSchema
+>;
+
+export const WonderConversationMemoryTurnSchema = z.object({
+  turnId: z.string().min(1),
+  revision: z.number().int().nonnegative(),
+  timestamp: z.number().finite(),
+  regionId: z.string(),
+  userText: z.string().max(400),
+  aiSummary: z.string().max(320),
+  actionType: z.string().max(64),
+  language: z.enum(['ko', 'vi', 'en', 'mixed', 'unknown']).default('unknown'),
+});
+
+export type WonderConversationMemoryTurn = z.infer<
+  typeof WonderConversationMemoryTurnSchema
 >;
 
 export type WonderBoardActionType =
@@ -401,6 +540,7 @@ export interface WonderRecognitionSpan {
 
 export interface WonderRecognitionRegion {
   regionId: string;
+  recognitionId?: string;
   boardId: string;
   revision: number;
   contentRevision: number;
@@ -486,6 +626,92 @@ export interface WonderAnimationProgress {
   completed: boolean;
 }
 
+export type WonderSemanticNodeLevel =
+  | 'raw_stroke'
+  | 'stroke_component'
+  | 'hangul_jamo'
+  | 'syllable_block'
+  | 'lexical_word'
+  | 'eojeol'
+  | 'phrase'
+  | 'sentence'
+  | 'paragraph'
+  | 'board_context';
+
+export type WonderCompletionStatus =
+  | 'IN_PROGRESS'
+  | 'PROVISIONAL'
+  | 'STABLE'
+  | 'REOPENED'
+  | 'AMBIGUOUS'
+  | 'FINALIZED_FOR_CURRENT_ANALYSIS';
+
+export type WonderInterventionGranularity =
+  | 'SILENT_OBSERVE'
+  | 'CHARACTER'
+  | 'WORD'
+  | 'SENTENCE'
+  | 'PARAGRAPH';
+
+export type WonderSpacingIssue =
+  | 'none'
+  | 'missing_spaces'
+  | 'excessive_spaces'
+  | 'irregular_spaces';
+
+export interface WonderSpacingHypothesis {
+  id: string;
+  rawText: string;
+  proposedText: string;
+  tokens: string[];
+  score: number;
+  spacingIssue: WonderSpacingIssue;
+  reason: string;
+}
+
+export interface WonderNormalizedSpacingFeatures {
+  normalizedHorizontalGap: number;
+  normalizedVerticalOffset: number;
+  verticalOverlapRatio: number;
+  baselineAlignmentScore: number;
+  temporalProximityScore: number;
+  relativeScaleDifference: number;
+}
+
+export interface WonderSemanticNode {
+  id: string;
+  level: WonderSemanticNodeLevel;
+  parentId: string | null;
+  childIds: string[];
+  sourceStrokeIds: string[];
+  recognizedText: string;
+  originalTranscription: string;
+  normalizedCandidateText: string;
+  alternativeCandidates: string[];
+  bbox: WonderBBox;
+  language: WonderLanguage;
+  recognitionConfidence: number;
+  segmentationConfidence: number;
+  semanticConfidence: number;
+  contentRevision: number;
+  geometryRevision: number;
+  semanticRevision: number;
+  completionStatus: WonderCompletionStatus;
+  contextDependencyIds: string[];
+  localScalePx: number;
+  spacingHypotheses?: WonderSpacingHypothesis[];
+  granularityDecision?: WonderInterventionGranularity;
+}
+
+export interface WonderSemanticTree {
+  boardId: string;
+  revision: number;
+  rootId: string;
+  nodes: WonderSemanticNode[];
+  writingCadenceMs: number;
+  updatedAt: number;
+}
+
 export interface WonderAnnotation {
   annotation_id: string;
   stable_key: string;
@@ -517,11 +743,16 @@ export interface WonderAnnotation {
   };
   placement_preference: WonderPlacementPreference;
   learning_concept_ids: string[];
+  teaching_activity_id?: string;
+  error_identity?: string;
   created_at: number;
   status: 'active' | 'resolved' | 'dismissed' | 'stale';
   lifecycle_state: WonderAnnotationLifecycleState;
   animation_progress: WonderAnimationProgress;
   reconciliation_action?: WonderReconciliationAction;
+  granularity?: WonderInterventionGranularity;
+  parent_node_id?: string;
+  retracted_reason?: string;
 }
 
 export const WonderBBoxSchema = z.object({
@@ -594,6 +825,8 @@ export const WonderAnnotationSchema = z.object({
   }),
   placement_preference: z.enum(['below', 'above', 'right', 'left']),
   learning_concept_ids: z.array(z.string()),
+  teaching_activity_id: z.string().optional(),
+  error_identity: z.string().optional(),
   created_at: z.number().finite(),
   status: z.enum(['active', 'resolved', 'dismissed', 'stale']),
   lifecycle_state: z
@@ -632,6 +865,7 @@ export interface WonderTeachingCard {
   geometry: WonderBBox;
   titleVi: string;
   koreanPhrase: string;
+  practiceTarget?: string;
   ipa?: string;
   explanationVi: string;
   breakdown: Array<{ token: string; meaningVi: string }>;
@@ -706,6 +940,7 @@ export interface WonderBoardDocument {
   themeId: WonderBoardThemeId;
   aiEnabled: boolean;
   aiMode: WonderAiMode;
+  targetLanguage?: WonderTargetLanguage;
   guidanceLevel?: WonderGuidanceLevel;
   teacherState: WonderTeacherState;
   animationSpeed: WonderAnimationSpeed;
@@ -720,9 +955,12 @@ export interface WonderBoardDocument {
   annotations: WonderAnnotation[];
   teachingCards: WonderTeachingCard[];
   boardContext?: WonderBoardContext;
+  semanticTree?: WonderSemanticTree;
   beginnerLoop?: WonderBeginnerLoopState;
   hangulDemos?: WonderHangulDemoSpec[];
   deferredActions?: WonderBoardAction[];
+  conversationMemory?: WonderConversationMemoryTurn[];
+  handwritingSynthesisEnabled?: boolean;
   recordedEventKeys?: string[];
   events: WonderLearningEvent[];
   telemetry: WonderTelemetryMetrics;
@@ -732,6 +970,20 @@ export interface WonderBoardDocument {
 
 export const WonderRecognitionDiagnosticEntrySchema = z.object({
   regionId: z.string(),
+  recognitionId: z.string().optional(),
+  sourceStrokeIds: z.array(z.string()).optional(),
+  inputImageHash: z.string().optional(),
+  structuralVerification: z.object({
+    verdict: z.enum(['agrees', 'conflict', 'provider_alternative', 'insufficient_evidence']),
+    vowel: z.string().optional(),
+    side: z.enum(['right', 'left', 'above', 'below']).optional(),
+    dominantAxis: z.enum(['horizontal', 'vertical']).optional(),
+    virtualJunction: z.boolean().optional(),
+    stemStrokeId: z.string().optional(),
+    branchStrokeIds: z.array(z.string()).optional(),
+    componentLayout: z.enum(['standalone', 'initial_left', 'initial_above']).optional(),
+    possibleFinal: z.boolean().optional(),
+  }).optional(),
   sourceRevision: z.number().int(),
   providerId: z.string(),
   engineVersion: z.string(),
@@ -747,6 +999,20 @@ export const WonderRecognitionDiagnosticEntrySchema = z.object({
     'UNMAPPED',
   ]),
   timestamp: z.number(),
+  requestAttempted: z.boolean().optional(),
+  cropWidth: z.number().nonnegative().optional(),
+  cropHeight: z.number().nonnegative().optional(),
+  cropDataUrl: z.string().optional(),
+  rawTranscription: z.string().optional(),
+  segmentationSummary: z.string().optional(),
+  completionState: z.string().optional(),
+  providerFailureReason: z.string().optional(),
+  annotationDecision: z.string().optional(),
+  learningIntent: z.string().optional(),
+  teachingActivityId: z.string().optional(),
+  conceptIds: z.array(z.string()).optional(),
+  annotationIds: z.array(z.string()).optional(),
+  suppressedFeedbackReason: z.string().optional(),
 });
 
 export type WonderRecognitionDiagnosticEntry = z.infer<

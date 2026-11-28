@@ -1,0 +1,18 @@
+{
+  "dataset": "SEED real human contrastive Hangul",
+  "cases": [
+    {
+      "id": "latest-board-four-regions",
+      "source": "Learner report in addendum §82",
+      "screenshot": null,
+      "rawStrokes": null,
+      "confirmedByWriter": false,
+      "occurrences": [
+        { "label": "A", "position": "left", "proposed": "아" },
+        { "label": "B", "position": "top-center", "proposed": "어" },
+        { "label": "C", "position": "right", "proposed": "어" },
+        { "label": "D", "position": "bottom-center", "proposed": "아" }
+      ]
+    }
+  ]
+}

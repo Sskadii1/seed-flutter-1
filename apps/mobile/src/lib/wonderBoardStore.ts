@@ -7,6 +7,7 @@ import { createEmptyWonderBoard } from '@seed/learning-engine';
 
 const LEGACY_BOARDS_STORAGE_KEY_V1 = 'seed_wonder_boards_v1';
 const BOARDS_STORAGE_KEY = 'seed_wonder_boards_v2';
+const BOARDS_BACKUP_KEY = 'seed_wonder_boards_backup_v2';
 const ACTIVE_BOARD_ID_KEY = 'seed_wonder_active_board_v1';
 const PRIVACY_PREF_KEY = 'seed_wonder_privacy_v1';
 
@@ -81,6 +82,7 @@ function migrateBoardToV2(b: Partial<WonderBoardDocument>, fromV1 = false): Wond
     strokes: Array.isArray(b.strokes) ? b.strokes : [],
     annotations: migratedAnnotations,
     teachingCards: Array.isArray(b.teachingCards) ? b.teachingCards : [],
+    semanticTree: b.semanticTree,
     hangulDemos: Array.isArray(b.hangulDemos) ? b.hangulDemos : [],
     deferredActions: Array.isArray(b.deferredActions) ? b.deferredActions : [],
     recordedEventKeys: Array.isArray(b.recordedEventKeys) ? b.recordedEventKeys : [],
@@ -104,6 +106,11 @@ export function loadWonderBoards(): WonderBoardDocument[] {
     if (!Array.isArray(parsed) || parsed.length === 0) {
       return [createEmptyWonderBoard()];
     }
+    if (parsed.some((b) => Array.isArray(b.strokes) && b.strokes.length > 0)) {
+      if (!storage.getItem(BOARDS_BACKUP_KEY)) {
+        storage.setItem(BOARDS_BACKUP_KEY, raw);
+      }
+    }
     const migrated = parsed.map((b) => migrateBoardToV2(b, migratedFromV1));
     if (migratedFromV1) {
       storage.setItem(BOARDS_STORAGE_KEY, JSON.stringify(migrated));
@@ -118,6 +125,16 @@ export function saveWonderBoards(boards: WonderBoardDocument[]): void {
   const storage = getStorage();
   if (!storage) return;
   try {
+    const prevRaw = storage.getItem(BOARDS_STORAGE_KEY);
+    if (prevRaw) {
+      const prevParsed = JSON.parse(prevRaw) as Array<Partial<WonderBoardDocument>>;
+      if (
+        Array.isArray(prevParsed) &&
+        prevParsed.some((b) => Array.isArray(b.strokes) && b.strokes.length > 0)
+      ) {
+        storage.setItem(BOARDS_BACKUP_KEY, prevRaw);
+      }
+    }
     storage.setItem(BOARDS_STORAGE_KEY, JSON.stringify(boards));
   } catch {
     // Ignore storage quota errors cleanly

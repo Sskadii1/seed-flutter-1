@@ -1,0 +1,378 @@
+{
+  "status": "BLOCKED",
+  "dataset": "SEED real human contrastive Hangul",
+  "sampleCount": 0,
+  "caseCount": 0,
+  "sources": [
+    "Learner report in addendum §82"
+  ],
+  "pending": [
+    {
+      "caseId": "latest-board-four-regions",
+      "source": "Learner report in addendum §82",
+      "label": "A",
+      "position": "left",
+      "proposed": "아",
+      "reasons": [
+        "REAL_HANDWRITING_MISSING",
+        "WRITER_CONFIRMATION_MISSING",
+        "LIVE_CROP_AND_STROKE_EVIDENCE_MISSING"
+      ]
+    },
+    {
+      "caseId": "latest-board-four-regions",
+      "source": "Learner report in addendum §82",
+      "label": "B",
+      "position": "top-center",
+      "proposed": "어",
+      "reasons": [
+        "REAL_HANDWRITING_MISSING",
+        "WRITER_CONFIRMATION_MISSING",
+        "LIVE_CROP_AND_STROKE_EVIDENCE_MISSING"
+      ]
+    },
+    {
+      "caseId": "latest-board-four-regions",
+      "source": "Learner report in addendum §82",
+      "label": "C",
+      "position": "right",
+      "proposed": "어",
+      "reasons": [
+        "REAL_HANDWRITING_MISSING",
+        "WRITER_CONFIRMATION_MISSING",
+        "LIVE_CROP_AND_STROKE_EVIDENCE_MISSING"
+      ]
+    },
+    {
+      "caseId": "latest-board-four-regions",
+      "source": "Learner report in addendum §82",
+      "label": "D",
+      "position": "bottom-center",
+      "proposed": "아",
+      "reasons": [
+        "REAL_HANDWRITING_MISSING",
+        "WRITER_CONFIRMATION_MISSING",
+        "LIVE_CROP_AND_STROKE_EVIDENCE_MISSING"
+      ]
+    }
+  ],
+  "matrix": {
+    "basic_vowels": {
+      "ㅏ/ㅓ": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "ㅗ/ㅜ": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "ㅑ/ㅕ": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "ㅛ/ㅠ": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "ㅡ/ㅣ": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      }
+    },
+    "vowel_syllables": {
+      "아/어": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "오/우": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "야/여": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "요/유": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      }
+    },
+    "consonant_vowel_syllables": {
+      "가/거": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "나/너": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "다/더": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "자/저": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "카/커": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "하/허": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "고/구": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "도/두": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      }
+    },
+    "similar_initials": {
+      "가/카": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "자/차": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "다/타": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "바/파": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "아/하": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      }
+    },
+    "final_consonants": {
+      "하/학": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "도/독": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "가/각": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      },
+      "아/안": {
+        "accuracy": {
+          "hits": 0,
+          "samples": 0,
+          "rate": null
+        },
+        "raw": {},
+        "verified": {}
+      }
+    }
+  },
+  "metrics": {
+    "contrastiveAccuracy": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "nearIdenticalGlyphAccuracy": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "vowelOrientationConfusionRate": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "initialConsonantConfusionRate": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "finalConsonantOmissionRate": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "disconnectedStrokeAccuracy": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "characterVersusJamoAccuracy": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "repetitionIntentAccuracy": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "contrastivePracticeDetectionAccuracy": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "repeatedExplanationRate": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "conceptRedundancyRate": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "falseCorrectionRate": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "incorrectTerminologyRate": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    },
+    "groupedFeedbackAnnotationDensity": {
+      "hits": 0,
+      "samples": 0,
+      "rate": null
+    }
+  },
+  "occurrences": []
+}

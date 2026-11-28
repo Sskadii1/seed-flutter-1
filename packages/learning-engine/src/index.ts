@@ -9,3 +9,7 @@ export * from './wonder-context';
 export * from './wonder-tutor';
 export * from './wonder-benchmark-v3';
 export * from './wonder-typography';
+export * from './wonder-hierarchy';
+export * from './wonder-english';
+export * from './wonder-handwriting-synth';
+export * from './wonder-hangul';

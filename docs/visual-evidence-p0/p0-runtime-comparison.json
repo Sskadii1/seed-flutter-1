@@ -1,0 +1,164 @@
+{
+  "capturedAt": "2026-11-27T08:57:11.632Z",
+  "serverHealth": {
+    "ok": true,
+    "providers": {
+      "deepseek": false,
+      "gemini": false,
+      "openai": false
+    },
+    "tutorReady": false,
+    "visionReady": false,
+    "authRequired": false
+  },
+  "providerComparison": [
+    {
+      "sample": "open-oval 아 + 어 (25% zoom freehand strokes)",
+      "A_local": [
+        {
+          "text": "아",
+          "status": "RECOGNIZED",
+          "provider": "local-freehand-jamo"
+        },
+        {
+          "text": "어",
+          "status": "RECOGNIZED",
+          "provider": "local-freehand-jamo"
+        }
+      ],
+      "B_liveVision": {
+        "httpStatus": 503,
+        "body": {
+          "recognitionStatus": "PROVIDER_UNAVAILABLE",
+          "error": "No multimodal vision provider configured on server."
+        }
+      },
+      "C_hybrid": [
+        {
+          "text": "아",
+          "status": "RECOGNIZED",
+          "provider": "local-freehand-jamo"
+        },
+        {
+          "text": "어",
+          "status": "RECOGNIZED",
+          "provider": "local-freehand-jamo"
+        }
+      ]
+    },
+    {
+      "sample": "messy connected cursive freehand",
+      "A_local": [],
+      "B_liveVision": {
+        "httpStatus": 503,
+        "crop": "1280x587",
+        "body": {
+          "recognitionStatus": "PROVIDER_UNAVAILABLE",
+          "error": "No multimodal vision provider configured on server."
+        }
+      },
+      "manualNagShown": false
+    }
+  ],
+  "reproScreenshots3And4": {
+    "repro3Texts": [
+      "아",
+      "어"
+    ],
+    "repro4Texts": [
+      "사 아"
+    ],
+    "independentCloudPreserved": {
+      "saAnnIdBefore": "ann_board_default_vocab_사_66530",
+      "saAnnIdAfter": "ann_board_default_vocab_사_66530",
+      "saCompletedAfter": true,
+      "activeClouds": [
+        "사",
+        "아"
+      ]
+    }
+  },
+  "partialRestraint": {
+    "regions": [],
+    "activeAnnotations": 0
+  },
+  "toolbarCollisionChecks": [
+    {
+      "viewport": {
+        "scale": 2,
+        "offsetX": 0,
+        "offsetY": 0
+      },
+      "dockRect": {
+        "top": 720,
+        "bottom": 769,
+        "left": 250,
+        "right": 1266
+      },
+      "boxes": [
+        {
+          "testid": "chalk-corr-ann_board_default_tense_reg_board_default_r25_0",
+          "top": 97,
+          "bottom": 154,
+          "left": 416,
+          "right": 738
+        },
+        {
+          "testid": "chalk-expl-ann_board_default_tense_reg_board_default_r25_0",
+          "top": 169,
+          "bottom": 208,
+          "left": 416,
+          "right": 1264
+        },
+        {
+          "testid": "chalk-corr-ann_board_default_obj_reg_board_default_r25_0",
+          "top": 558,
+          "bottom": 615,
+          "left": 342,
+          "right": 627
+        },
+        {
+          "testid": "chalk-expl-ann_board_default_obj_reg_board_default_r25_0",
+          "top": 630,
+          "bottom": 669,
+          "left": 342,
+          "right": 1262
+        }
+      ],
+      "overlaps": [],
+      "strokeOverlaps": []
+    }
+  ],
+  "continuousSession": [
+    {
+      "step": "1_single_char",
+      "text": "사",
+      "anns": 1
+    },
+    {
+      "step": "2_full_sentence_with_error",
+      "text": "저는 한국어가 공부해요.",
+      "errors": [
+        "한국어가"
+      ]
+    },
+    {
+      "step": "3_continued_writing",
+      "regions": [
+        "저는 한국어가 공부해요.",
+        "고마워"
+      ],
+      "activeAnnotations": [
+        "한국어가",
+        "고마워"
+      ],
+      "networkRequests": [
+        {
+          "url": "http://127.0.0.1:4173/api/wonder/health",
+          "status": 200,
+          "mime": "application/json"
+        }
+      ]
+    }
+  ]
+}

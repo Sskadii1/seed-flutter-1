@@ -19,11 +19,24 @@ import {
   WonderStroke,
   WonderStrokePoint,
   WonderStrokeProvenance,
+  WonderTargetLanguage,
   WonderTeachingCard,
   WonderThemeTokens,
 } from '@seed/schema';
 import { attachParticle, hasBatchim } from './hangul';
+import { decomposeHangulUnit, inspectHangulBranch } from './wonder-hangul';
 import { updateAdaptiveAiProfile } from './adaptive-ai';
+import {
+  decodeKoreanSpacingHypotheses,
+  estimateLocalHandwritingScale,
+} from './wonder-hierarchy';
+import {
+  analyzeEnglishPedagogyForRegion,
+  buildEnglishDiscoveryCard,
+  describeEnglishWordVi,
+  latinGlyphStrokes,
+  recognizeFreehandLatinCluster,
+} from './wonder-english';
 
 // ---------------------------------------------------------------------------
 // 1. Geometry & Non-Destructive Layer 2 Ink Helpers
@@ -228,13 +241,14 @@ export interface WonderCloudGeometry {
 export function generateScallopedCloudGeometry(
   bbox: WonderBBox,
   seed = 1,
-  neighborBoxes: WonderBBox[] = []
+  neighborBoxes: WonderBBox[] = [],
+  compact = false
 ): WonderCloudGeometry {
   const h = Math.max(28, bbox.height);
   // Generous proportional padding (35–55% horizontal, 30–45% vertical) scaled with ink height
-  const baseClearX = Math.max(24, Math.min(180, h * 0.44));
-  const baseClearY = Math.max(20, Math.min(150, h * 0.36));
-  const minNeighborFloor = Math.max(12, Math.min(24, h * 0.18));
+  const baseClearX = compact ? Math.max(9, Math.min(20, h * 0.16)) : Math.max(24, Math.min(180, h * 0.44));
+  const baseClearY = compact ? Math.max(8, Math.min(18, h * 0.14)) : Math.max(20, Math.min(150, h * 0.36));
+  const minNeighborFloor = compact ? 6 : Math.max(12, Math.min(24, h * 0.18));
 
   let leftClear = baseClearX;
   let rightClear = baseClearX;
@@ -501,7 +515,7 @@ export function sliceArrowPathAtProgress(
   arrow: WonderArrowPath,
   progress: number
 ): { shaftPath: string; headPath: string; headX: number; headY: number; headAngle: number } {
-  if (progress <= 0.001) {
+  if (progress <= 0.001 || (arrow.fromX === arrow.toX && arrow.fromY === arrow.toY)) {
     return {
       shaftPath: '',
       headPath: '',
@@ -595,16 +609,22 @@ export function generateCurvedChalkArrowSvgPath(arrow: WonderArrowPath): {
   shaftPath: string;
   headPath: string;
 } {
+  if (arrow.fromX === arrow.toX && arrow.fromY === arrow.toY) return { shaftPath: '', headPath: '' };
   const shaftPath = `M ${arrow.fromX.toFixed(1)} ${arrow.fromY.toFixed(1)} Q ${arrow.ctrlX.toFixed(1)} ${arrow.ctrlY.toFixed(1)} ${arrow.toX.toFixed(1)} ${arrow.toY.toFixed(1)}`;
+  const [left, , right] = arrowHeadPoints(arrow);
+  const headPath = `M ${left.x.toFixed(1)} ${left.y.toFixed(1)} L ${arrow.toX.toFixed(1)} ${arrow.toY.toFixed(1)} L ${right.x.toFixed(1)} ${right.y.toFixed(1)}`;
+  return { shaftPath, headPath };
+}
+
+function arrowHeadPoints(arrow: WonderArrowPath) {
   const angle = Math.atan2(arrow.toY - arrow.ctrlY, arrow.toX - arrow.ctrlX);
   const headLen = 9.5;
   const spread = Math.PI / 6;
-  const lx = arrow.toX - headLen * Math.cos(angle - spread);
-  const ly = arrow.toY - headLen * Math.sin(angle - spread);
-  const rx = arrow.toX - headLen * Math.cos(angle + spread);
-  const ry = arrow.toY - headLen * Math.sin(angle + spread);
-  const headPath = `M ${lx.toFixed(1)} ${ly.toFixed(1)} L ${arrow.toX.toFixed(1)} ${arrow.toY.toFixed(1)} L ${rx.toFixed(1)} ${ry.toFixed(1)}`;
-  return { shaftPath, headPath };
+  return [
+    { x: arrow.toX - headLen * Math.cos(angle - spread), y: arrow.toY - headLen * Math.sin(angle - spread) },
+    { x: arrow.toX, y: arrow.toY },
+    { x: arrow.toX - headLen * Math.cos(angle + spread), y: arrow.toY - headLen * Math.sin(angle + spread) },
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -631,7 +651,9 @@ function makeArrowBetween(
   targetBox: WonderBBox,
   noteBox: WonderBBox,
   placement: WonderPlacementPreference,
-  cloud?: WonderCloudGeometry
+  cloud?: WonderCloudGeometry,
+  bend = 0,
+  anchorShift = 0
 ): WonderArrowPath {
   const resolvedCloud = cloud ?? generateScallopedCloudGeometry(targetBox, 1);
   const cloudBox = resolvedCloud.outerBounds;
@@ -656,9 +678,9 @@ function makeArrowBetween(
 
   // Clamp arrow entry near the side of the note facing the cloud if diagonally offset
   if (placement === 'below' || placement === 'above') {
-    toX = Math.max(noteBox.minX + 18, Math.min(noteBox.maxX - 18, cloudCx));
+    toX = Math.max(noteBox.minX + 12, Math.min(noteBox.maxX - 12, cloudCx + anchorShift));
   } else {
-    toY = Math.max(noteBox.minY + 14, Math.min(noteBox.maxY - 14, cloudCy));
+    toY = Math.max(noteBox.minY + 12, Math.min(noteBox.maxY - 12, cloudCy + anchorShift));
   }
 
   // Pick closest point along actual exterior cloud boundary facing the arrow destination
@@ -690,58 +712,116 @@ function makeArrowBetween(
   const dist = Math.hypot(dx, dy) || 1;
   const nx = -dy / dist;
   const ny = dx / dist;
-  const sign = placement === 'left' || placement === 'above' ? -1 : 1;
-  const arcAmp = Math.min(22, Math.max(10, dist * 0.14)) * sign;
-
   return {
     fromX: Number(fromX.toFixed(1)),
     fromY: Number(fromY.toFixed(1)),
-    ctrlX: Number(((fromX + toX) / 2 + nx * arcAmp).toFixed(1)),
-    ctrlY: Number(((fromY + toY) / 2 + ny * arcAmp).toFixed(1)),
+    ctrlX: Number(((fromX + toX) / 2 + nx * bend).toFixed(1)),
+    ctrlY: Number(((fromY + toY) / 2 + ny * bend).toFixed(1)),
     toX: Number(toX.toFixed(1)),
     toY: Number(toY.toFixed(1)),
   };
 }
 
-function boxEncloses(outer: WonderBBox, inner: WonderBBox): boolean {
-  return (
-    outer.minX <= inner.minX + 2 &&
-    outer.maxX >= inner.maxX - 2 &&
-    outer.minY <= inner.minY + 2 &&
-    outer.maxY >= inner.maxY - 2
-  );
+type RoutePoint = { x: number; y: number };
+type RouteBounds = Pick<WonderBBox, 'minX' | 'minY' | 'maxX' | 'maxY'>;
+
+function arrowSegments(arrow: WonderArrowPath): Array<[RoutePoint, RoutePoint]> {
+  if (arrow.fromX === arrow.toX && arrow.fromY === arrow.toY) return [];
+  const [left, tip, right] = arrowHeadPoints(arrow);
+  const segments: Array<[RoutePoint, RoutePoint]> = [[left, tip], [tip, right]];
+  let last = { x: arrow.fromX, y: arrow.fromY };
+  for (let i = 1; i <= 24; i++) {
+    const t = i / 24;
+    const rest = 1 - t;
+    const point = {
+      x: rest * rest * arrow.fromX + 2 * rest * t * arrow.ctrlX + t * t * arrow.toX,
+      y: rest * rest * arrow.fromY + 2 * rest * t * arrow.ctrlY + t * t * arrow.toY,
+    };
+    segments.push([last, point]);
+    last = point;
+  }
+  return segments;
 }
 
-function arrowCrossesForeignBlocker(
-  arrow: WonderArrowPath,
-  targetBox: WonderBBox,
-  blockers: WonderBBox[],
-  noteBox?: WonderBBox
-): boolean {
-  const foreignBlockers = blockers.filter(
-    (b) => !boxEncloses(b, targetBox) && !boxesIntersect(b, targetBox, 14)
-  );
-  // Check both arrow shaft AND arrowhead tip (t = 0.15 .. 1.0)
-  for (const t of [0.15, 0.3, 0.45, 0.6, 0.75, 0.88, 1.0]) {
-    const mt = 1 - t;
-    const px = mt * mt * arrow.fromX + 2 * mt * t * arrow.ctrlX + t * t * arrow.toX;
-    const py = mt * mt * arrow.fromY + 2 * mt * t * arrow.ctrlY + t * t * arrow.toY;
-    const sampleBox: WonderBBox = {
-      minX: px - 5,
-      minY: py - 5,
-      maxX: px + 5,
-      maxY: py + 5,
-      width: 10,
-      height: 10,
-    };
-    if (noteBox && boxesIntersect(sampleBox, noteBox, 3)) {
-      return true;
+function segmentIntersectsBox(a: RoutePoint, b: RoutePoint, box: RouteBounds, pad: number) {
+  let entry = 0;
+  let exit = 1;
+  for (const [from, to, min, max] of [
+    [a.x, b.x, box.minX - pad, box.maxX + pad],
+    [a.y, b.y, box.minY - pad, box.maxY + pad],
+  ]) {
+    const delta = to - from;
+    if (delta === 0) {
+      if (from < min || from > max) return false;
+      continue;
     }
-    if (foreignBlockers.some((b) => boxesIntersect(sampleBox, b, 6))) {
-      return true;
+    const t0 = (min - from) / delta;
+    const t1 = (max - from) / delta;
+    entry = Math.max(entry, Math.min(t0, t1));
+    exit = Math.min(exit, Math.max(t0, t1));
+    if (entry > exit) return false;
+  }
+  return true;
+}
+
+export function hiddenAnnotationArrow(box: WonderBBox): WonderArrowPath {
+  return {
+    fromX: box.minX, ctrlX: box.minX, toX: box.minX,
+    fromY: box.minY, ctrlY: box.minY, toY: box.minY,
+  };
+}
+
+export function routeAnnotationArrow(params: {
+  targetBox: WonderBBox;
+  cloud: WonderCloudGeometry;
+  noteBox: WonderBBox;
+  placement: WonderPlacementPreference;
+  obstacles: WonderBBox[];
+  existingRoutes?: WonderArrowPath[];
+  safeBounds?: RouteBounds;
+  maxLength?: number;
+}): WonderArrowPath | undefined {
+  const { targetBox, cloud, noteBox, placement, obstacles, existingRoutes = [], safeBounds } = params;
+  const maxLength = params.maxLength ?? 150;
+  const priorShaftBoxes = existingRoutes.flatMap((arrow) => arrowSegments(arrow).map(([a, b]) => ({
+    minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y),
+    maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y),
+  })));
+  const insideViewport = (p: RoutePoint) => !safeBounds || (
+    p.x >= safeBounds.minX + 3 && p.x <= safeBounds.maxX - 3 &&
+    p.y >= safeBounds.minY + 3 && p.y <= safeBounds.maxY - 3
+  );
+  const clear = (arrow: WonderArrowPath) => {
+    const controlLength = Math.hypot(arrow.ctrlX - arrow.fromX, arrow.ctrlY - arrow.fromY) +
+      Math.hypot(arrow.toX - arrow.ctrlX, arrow.toY - arrow.ctrlY);
+    const chord = Math.hypot(arrow.toX - arrow.fromX, arrow.toY - arrow.fromY);
+    if (chord < 9 || controlLength > maxLength) return false;
+    if (!insideViewport({ x: arrow.ctrlX, y: arrow.ctrlY })) return false;
+    const padding = 6;
+    const routeMinX = Math.min(arrow.fromX, arrow.ctrlX, arrow.toX) - 10 - padding;
+    const routeMaxX = Math.max(arrow.fromX, arrow.ctrlX, arrow.toX) + 10 + padding;
+    const routeMinY = Math.min(arrow.fromY, arrow.ctrlY, arrow.toY) - 10 - padding;
+    const routeMaxY = Math.max(arrow.fromY, arrow.ctrlY, arrow.toY) + 10 + padding;
+    const nearby = (box: RouteBounds) => box.minX <= routeMaxX && box.maxX >= routeMinX &&
+      box.minY <= routeMaxY && box.maxY >= routeMinY;
+    const nearbyObstacles = obstacles.filter(nearby);
+    const nearbyShaft = priorShaftBoxes.filter(nearby);
+    // Curve deviation from each chord is below 0.1 world units for these bends.
+    // The clearance also covers the visible shaft, arrowhead, and SVG rounding.
+    return arrowSegments(arrow).every(([a, b]) =>
+      insideViewport(a) && insideViewport(b) &&
+      !segmentIntersectsBox(a, b, noteBox, 5) &&
+      !nearbyObstacles.some((box) => segmentIntersectsBox(a, b, box, 5)) &&
+      !nearbyShaft.some((box) => segmentIntersectsBox(a, b, box, 6)) &&
+      !pointInPolygon(b.x, b.y, cloud.sampledPoints));
+  };
+  for (const shift of [0, -26, 26]) {
+    for (const bend of [0, -15, 15, -28, 28]) {
+      const arrow = makeArrowBetween(targetBox, noteBox, placement, cloud, bend, shift);
+      if (clear(arrow)) return arrow;
     }
   }
-  return false;
+  return undefined;
 }
 
 export function computeCollisionFreePlacement(params: {
@@ -753,7 +833,10 @@ export function computeCollisionFreePlacement(params: {
   activeWritingBox?: WonderBBox | null;
   safeGap?: number;
   maxWorldRight?: number;
+  worldSafeBounds?: { minX: number; minY: number; maxX: number; maxY: number };
+  uiOverlayBlockers?: WonderBBox[];
   cloudSeed?: number;
+  resolvedCloud?: WonderCloudGeometry;
 }): {
   noteBox: WonderBBox;
   placement: WonderPlacementPreference;
@@ -768,19 +851,65 @@ export function computeCollisionFreePlacement(params: {
     activeWritingBox,
     safeGap = 28,
     maxWorldRight = 1040,
+    worldSafeBounds,
+    uiOverlayBlockers = [],
     cloudSeed = 1,
   } = params;
 
-  const cloud = generateScallopedCloudGeometry(targetBox, cloudSeed, occupiedBoxes);
+  const cloud = params.resolvedCloud ?? generateScallopedCloudGeometry(targetBox, cloudSeed, occupiedBoxes);
   const cloudOuterBox = cloud.outerBounds;
 
-  const blockers = [
+  const worldBlockers = [
     cloudOuterBox,
     ...(activeWritingBox ? [...occupiedBoxes, activeWritingBox] : occupiedBoxes),
   ];
+  const blockers = [...worldBlockers, ...uiOverlayBlockers];
+  const findRoute = (noteBox: WonderBBox, placement: WonderPlacementPreference) =>
+    routeAnnotationArrow({
+      targetBox, cloud, noteBox, placement,
+      obstacles: [...occupiedBoxes, ...uiOverlayBlockers, ...(activeWritingBox ? [activeWritingBox] : [])],
+      safeBounds: worldSafeBounds,
+    });
+  let nearestClearNote: { noteBox: WonderBBox; placement: WonderPlacementPreference } | undefined;
+  const routeCandidate = (noteBox: WonderBBox, placement: WonderPlacementPreference) => {
+    nearestClearNote ??= { noteBox, placement };
+    return findRoute(noteBox, placement);
+  };
   const cx = (targetBox.minX + targetBox.maxX) / 2;
   const cy = (targetBox.minY + targetBox.maxY) / 2;
   const clampedBaseGap = Math.max(24, Math.min(44, Math.round(safeGap)));
+
+  const minWorldX = worldSafeBounds ? worldSafeBounds.minX : 16;
+  const minWorldY = worldSafeBounds ? worldSafeBounds.minY : 16;
+  const maxWorldX = worldSafeBounds ? worldSafeBounds.maxX : maxWorldRight;
+  const maxWorldY = worldSafeBounds ? worldSafeBounds.maxY : Infinity;
+
+  const clampCandidate = (minX: number, minY: number): WonderBBox => {
+    const availW = maxWorldX - minWorldX;
+    const clampedX =
+      availW >= desiredWidth
+        ? Math.max(minWorldX, Math.min(maxWorldX - desiredWidth, minX))
+        : minWorldX;
+    const clampedY =
+      Number.isFinite(maxWorldY) && maxWorldY - minWorldY >= desiredHeight
+        ? Math.max(minWorldY, Math.min(maxWorldY - desiredHeight, minY))
+        : Math.max(minWorldY, minY);
+    return {
+      minX: clampedX,
+      minY: clampedY,
+      maxX: clampedX + desiredWidth,
+      maxY: clampedY + desiredHeight,
+      width: desiredWidth,
+      height: desiredHeight,
+    };
+  };
+
+  const fitsSafeBounds = (b: WonderBBox): boolean => {
+    if (b.minX < minWorldX - 1 || b.maxX > maxWorldX + 1) return false;
+    if (b.minY < minWorldY - 1) return false;
+    if (Number.isFinite(maxWorldY) && b.maxY > maxWorldY + 1) return false;
+    return true;
+  };
 
   const expandedDirs: SpatialPlacementDirection[] = [];
   for (const p of preferredOrder) expandedDirs.push(p);
@@ -823,8 +952,9 @@ export function computeCollisionFreePlacement(params: {
       default:
         break;
     }
-    minX = Math.max(16, minX);
-    minY = Math.max(16, minY);
+    const availW = maxWorldX - minWorldX;
+    minX = availW >= desiredWidth ? Math.max(minWorldX, Math.min(maxWorldX - desiredWidth, minX)) : minWorldX;
+    minY = Math.max(minWorldY, minY);
     return {
       minX,
       minY,
@@ -839,13 +969,12 @@ export function computeCollisionFreePlacement(params: {
     const stepGap = clampedBaseGap + extra;
     for (const dir of expandedDirs) {
       const candidate = makeCandidate(dir, stepGap);
-      if (candidate.maxX > maxWorldRight) continue;
-      if (candidate.minY < 16) continue;
+      if (!fitsSafeBounds(candidate)) continue;
       const collides = blockers.some((b) => boxesIntersect(candidate, b, 12));
       if (!collides) {
         const basePlacement = toBasePlacement(dir);
-        const arrow = makeArrowBetween(targetBox, candidate, basePlacement, cloud);
-        if (!arrowCrossesForeignBlocker(arrow, targetBox, blockers, candidate)) {
+        const arrow = routeCandidate(candidate, basePlacement);
+        if (arrow) {
           return {
             noteBox: candidate,
             placement: basePlacement,
@@ -856,7 +985,54 @@ export function computeCollisionFreePlacement(params: {
     }
   }
 
-  // Secondary 2D radial ring search: find any free pocket where neither note nor arrow crosses blockers
+  // Sliding-edge search along right/left/below/above edges of cloudOuterBox (finds adjacent empty pockets cleanly)
+  for (const sideGap of [clampedBaseGap, clampedBaseGap + 36, clampedBaseGap + 80]) {
+    const ySlots = [
+      Math.round(cy - desiredHeight * 0.15),
+      Math.round(cy - desiredHeight * 0.85),
+      Number.isFinite(maxWorldY) ? Math.round(maxWorldY - desiredHeight - 4) : Math.round(cy + 24),
+      Math.round(minWorldY + 4),
+    ];
+    for (const pDir of ['right', 'left'] as const) {
+      const xPos =
+        pDir === 'right'
+          ? cloudOuterBox.maxX + sideGap
+          : cloudOuterBox.minX - sideGap - desiredWidth;
+      for (const yPos of ySlots) {
+        const cand = clampCandidate(xPos, yPos);
+        if (!fitsSafeBounds(cand)) continue;
+        if (blockers.some((b) => boxesIntersect(cand, b, 12))) continue;
+        const arrow = routeCandidate(cand, pDir);
+        if (arrow) {
+          return { noteBox: cand, placement: pDir, arrow };
+        }
+      }
+    }
+
+    const xSlots = [
+      Math.round(cx - desiredWidth * 0.15),
+      Math.round(cx - desiredWidth * 0.85),
+      Math.round(minWorldX + 4),
+      Number.isFinite(maxWorldX) ? Math.round(maxWorldX - desiredWidth - 4) : Math.round(cx + 24),
+    ];
+    for (const pDir of ['below', 'above'] as const) {
+      const yPos =
+        pDir === 'below'
+          ? cloudOuterBox.maxY + sideGap
+          : cloudOuterBox.minY - sideGap - desiredHeight;
+      for (const xPos of xSlots) {
+        const cand = clampCandidate(xPos, yPos);
+        if (!fitsSafeBounds(cand)) continue;
+        if (blockers.some((b) => boxesIntersect(cand, b, 12))) continue;
+        const arrow = routeCandidate(cand, pDir);
+        if (arrow) {
+          return { noteBox: cand, placement: pDir, arrow };
+        }
+      }
+    }
+  }
+
+  // Secondary 2D radial ring search: find any free pocket strictly inside safe bounds & outside toolbars
   const cloudHalfW = cloudOuterBox.width / 2;
   const cloudHalfH = cloudOuterBox.height / 2;
   const candidateAngles = [
@@ -879,16 +1055,11 @@ export function computeCollisionFreePlacement(params: {
       const sinA = Math.sin(ang);
       const anchorX = cx + cosA * (cloudHalfW + distOut + desiredWidth / 2);
       const anchorY = cy + sinA * (cloudHalfH + distOut + desiredHeight / 2);
-      const minX = Math.max(16, Math.min(maxWorldRight - desiredWidth, Math.round(anchorX - desiredWidth / 2)));
-      const minY = Math.max(16, Math.round(anchorY - desiredHeight / 2));
-      const candidate: WonderBBox = {
-        minX,
-        minY,
-        maxX: minX + desiredWidth,
-        maxY: minY + desiredHeight,
-        width: desiredWidth,
-        height: desiredHeight,
-      };
+      const candidate = clampCandidate(
+        Math.round(anchorX - desiredWidth / 2),
+        Math.round(anchorY - desiredHeight / 2)
+      );
+      if (!fitsSafeBounds(candidate)) continue;
       if (blockers.some((b) => boxesIntersect(candidate, b, 12))) continue;
       const basePlacement: WonderPlacementPreference =
         Math.abs(cosA) > Math.abs(sinA)
@@ -896,10 +1067,10 @@ export function computeCollisionFreePlacement(params: {
             ? 'right'
             : 'left'
           : sinA >= 0
-          ? 'below'
-          : 'above';
-      const arrow = makeArrowBetween(targetBox, candidate, basePlacement, cloud);
-      if (!arrowCrossesForeignBlocker(arrow, targetBox, blockers, candidate)) {
+            ? 'below'
+            : 'above';
+      const arrow = routeCandidate(candidate, basePlacement);
+      if (arrow) {
         return {
           noteBox: candidate,
           placement: basePlacement,
@@ -909,25 +1080,116 @@ export function computeCollisionFreePlacement(params: {
     }
   }
 
-  // Final fallback: place below lowest blocker shifted clear of horizontal obstacles if possible
-  const lowestMaxY = blockers.reduce((acc, b) => Math.max(acc, b.maxY), targetBox.maxY);
-  const fallbackMinX = Math.max(
-    16,
-    Math.min(maxWorldRight - desiredWidth, cx - desiredWidth / 2)
-  );
-  const fallbackMinY = lowestMaxY + clampedBaseGap;
-  const fallbackBox: WonderBBox = {
-    minX: fallbackMinX,
-    minY: fallbackMinY,
-    maxX: fallbackMinX + desiredWidth,
-    maxY: fallbackMinY + desiredHeight,
-    width: desiredWidth,
-    height: desiredHeight,
+  if (nearestClearNote) {
+    return { ...nearestClearNote, arrow: hiddenAnnotationArrow(nearestClearNote.noteBox) };
+  }
+
+  // Pass 3: Strictly avoid UI toolbars & viewport overflow even in crowded extreme zooms
+  const fallbackDirs: SpatialPlacementDirection[] = [
+    'above',
+    'right',
+    'left',
+    'above_right',
+    'above_left',
+    'below',
+    'below_right',
+    'below_left',
+  ];
+  let bestUiClear: {
+    box: WonderBBox;
+    dir: WonderPlacementPreference;
+    overlapScore: number;
+    totalScore: number;
+  } | null = null;
+  const evalUiClear = (cand: WonderBBox, pDir: WonderPlacementPreference) => {
+    if (uiOverlayBlockers.some((ub) => boxesIntersect(cand, ub, 6))) return false;
+    let overlapScore = 0;
+    for (let wbIdx = 0; wbIdx < worldBlockers.length; wbIdx++) {
+      const wb = worldBlockers[wbIdx];
+      const ox = Math.max(0, Math.min(cand.maxX, wb.maxX) - Math.max(cand.minX, wb.minX));
+      const oy = Math.max(0, Math.min(cand.maxY, wb.maxY) - Math.max(cand.minY, wb.minY));
+      // Weight actual ink strokes / existing annotations (index >= 1) 12x above outer cloud padding
+      const weight = wbIdx === 0 ? 1 : 12;
+      overlapScore += ox * oy * weight;
+    }
+    const distPenalty =
+      Math.hypot((cand.minX + cand.maxX) / 2 - cx, (cand.minY + cand.maxY) / 2 - cy) * 0.05;
+    const totalScore = overlapScore + distPenalty;
+    if (!bestUiClear || totalScore < bestUiClear.totalScore) {
+      bestUiClear = { box: cand, dir: pDir, overlapScore, totalScore };
+    }
+    return overlapScore === 0;
   };
+
+  for (const gapStep of [clampedBaseGap, clampedBaseGap + 36, clampedBaseGap + 84]) {
+    for (const dir of fallbackDirs) {
+      const raw = makeCandidate(dir, gapStep);
+      const cand = clampCandidate(raw.minX, raw.minY);
+      const pDir = toBasePlacement(dir);
+      if (evalUiClear(cand, pDir)) {
+        return {
+          noteBox: cand,
+          placement: pDir,
+          arrow: findRoute(cand, pDir) ?? hiddenAnnotationArrow(cand),
+        };
+      }
+    }
+  }
+
+  // Scan clean perimeter pockets inside worldSafeBounds so stroke/note overlap becomes zero if any pocket exists
+  const bestAfterFallback = bestUiClear as {
+    box: WonderBBox;
+    dir: WonderPlacementPreference;
+    overlapScore: number;
+    totalScore: number;
+  } | null;
+  if (worldSafeBounds && (!bestAfterFallback || bestAfterFallback.overlapScore > 0)) {
+    const maxSpanX = Math.max(minWorldX, maxWorldX - desiredWidth);
+    const xPockets = [0, 0.33, 0.66, 1].map((t) => Math.round(minWorldX + (maxSpanX - minWorldX) * t));
+    const maxSpanY = Number.isFinite(maxWorldY)
+      ? Math.max(minWorldY, maxWorldY - desiredHeight)
+      : minWorldY + 320;
+    const yPockets = [0, 0.33, 0.66, 1].map((t) => Math.round(minWorldY + (maxSpanY - minWorldY) * t));
+    for (const py of yPockets) {
+      for (const px of xPockets) {
+        const cand = clampCandidate(px, py);
+        const dxCenter = (cand.minX + cand.maxX) / 2 - cx;
+        const dyCenter = (cand.minY + cand.maxY) / 2 - cy;
+        const pDir: WonderPlacementPreference =
+          Math.abs(dxCenter) > Math.abs(dyCenter)
+            ? dxCenter >= 0
+              ? 'right'
+              : 'left'
+            : dyCenter >= 0
+              ? 'below'
+              : 'above';
+        evalUiClear(cand, pDir);
+      }
+    }
+  }
+  const finalBestUiClear = bestUiClear as {
+    box: WonderBBox;
+    dir: WonderPlacementPreference;
+    overlapScore: number;
+    totalScore: number;
+  } | null;
+  if (finalBestUiClear) {
+    return {
+      noteBox: finalBestUiClear.box,
+      placement: finalBestUiClear.dir,
+      arrow: hiddenAnnotationArrow(finalBestUiClear.box),
+    };
+  }
+
+  // Final fallback if no UI constraints apply: place below world blockers (not UI toolbars)
+  const lowestMaxY = worldBlockers.reduce((acc, b) => Math.max(acc, b.maxY), targetBox.maxY);
+  const fallbackBox = clampCandidate(cx - desiredWidth / 2, lowestMaxY + clampedBaseGap);
+  const finalPlacement: WonderPlacementPreference =
+    fallbackBox.maxY <= targetBox.minY ? 'above' : 'below';
   return {
     noteBox: fallbackBox,
-    placement: 'below',
-    arrow: makeArrowBetween(targetBox, fallbackBox, 'below', cloud),
+    placement: finalPlacement,
+    arrow: hiddenAnnotationArrow(fallbackBox),
   };
 }
 
@@ -1465,7 +1727,25 @@ export function generateHandwrittenStrokesForText(params: {
     const chars = Array.from(token);
     chars.forEach((ch, charIdx) => {
       const isHangul = ch >= '\uAC00' && ch <= '\uD7A3';
-      const charWidth = isHangul ? 30 : 14;
+      const latinPts = !isHangul
+        ? latinGlyphStrokes(
+            ch,
+            cursorX,
+            startY,
+            /[mwMW]/.test(ch) ? 20 : /[ilI1.,!':-]/.test(ch) ? 10 : 16,
+            baseHeight,
+            globalIdx
+          )
+        : null;
+      const charWidth = isHangul
+        ? 30
+        : /[mwMW]/.test(ch)
+          ? 20
+          : /[ilI1.,!':-]/.test(ch)
+            ? 10
+            : latinPts
+              ? 16
+              : 14;
 
       if (isHangul) {
         const sIndex = ch.charCodeAt(0) - 0xac00;
@@ -1499,6 +1779,11 @@ export function generateHandwrittenStrokesForText(params: {
       } else if (ch === '.' || ch === '?' || ch === '!') {
         const subGroups = jamoGlyphPoints(ch, cursorX, startY, charWidth, baseHeight, globalIdx);
         subGroups.forEach((pts, sIdx) => {
+          const carryHint = tokenIdx === 0 && charIdx === 0 && sIdx === 0;
+          addStrokePts(pts, `${idPrefix}_${tokenIdx}_${charIdx}_${sIdx}`, carryHint);
+        });
+      } else if (latinPts) {
+        latinPts.forEach((pts, sIdx) => {
           const carryHint = tokenIdx === 0 && charIdx === 0 && sIdx === 0;
           addStrokePts(pts, `${idPrefix}_${tokenIdx}_${charIdx}_${sIdx}`, carryHint);
         });
@@ -1554,7 +1839,7 @@ function isLikelyNonTextCluster(cluster: WonderStroke[]): boolean {
 /**
  * Groups Layer 2 strokes into vertical writing lines and horizontal word/phrase clusters.
  */
-export function segmentStrokesIntoRegions(strokes: WonderStroke[]): Array<{
+export function segmentStrokesIntoRegions(strokes: WonderStroke[], separateHangulOccurrences = false): Array<{
   strokes: WonderStroke[];
   wordClusters: WonderStroke[][];
   bbox: WonderBBox;
@@ -1564,6 +1849,38 @@ export function segmentStrokesIntoRegions(strokes: WonderStroke[]): Array<{
     (s) => !s.deleted && s.tool !== 'eraser_pixel' && s.provenance !== 'ai_teaching'
   );
   if (active.length === 0) return [];
+
+  if (separateHangulOccurrences) {
+    const textInputKey = (s: WonderStroke) => {
+      if (s.provenance !== 'typed_vector' && s.provenance !== 'fixture_sample') return undefined;
+      const source = s.id.match(/^(.*)_\d+_\d+_\d+$/)?.[1];
+      return source ? JSON.stringify([s.provenance, source]) : undefined;
+    };
+    // An insertion carries its own transcript on one stroke. Keep its identity
+    // through spatial grouping so it cannot label a neighboring insertion or raw ink.
+    const labeledInputs = new Set(active.filter((s) => s.fixtureHintText?.trim()).map(textInputKey));
+    labeledInputs.delete(undefined);
+    if (labeledInputs.size > 0) {
+      const typed = new Map<string, WonderStroke[]>();
+      const unassigned: WonderStroke[] = [];
+      for (const stroke of active) {
+        const key = textInputKey(stroke);
+        if (!key || !labeledInputs.has(key)) {
+          unassigned.push(stroke);
+          continue;
+        }
+        const group = typed.get(key);
+        if (group) group.push(stroke);
+        else typed.set(key, [stroke]);
+      }
+      if (typed.size > 1 || unassigned.length > 0) {
+        return [
+          ...[...typed.values()].flatMap((group) => segmentStrokesIntoRegions(group)),
+          ...segmentStrokesIntoRegions(unassigned, true),
+        ].sort((a, b) => a.bbox.minY - b.bbox.minY || a.bbox.minX - b.bbox.minX);
+      }
+    }
+  }
 
   // Step 1: Group vertically+horizontally close strokes into local word/syllable islands first
   // (prevents thin top/bottom strokes from forming spurious single-stroke seed lines in Y-sort).
@@ -1588,8 +1905,10 @@ export function segmentStrokesIntoRegions(strokes: WonderStroke[]): Array<{
       const b = active[j].bbox;
       const maxH = Math.max(a.height, b.height);
       const minH = Math.max(1, Math.min(a.height, b.height));
+      const scaleDiff = Math.abs(a.height - b.height) / Math.max(1, maxH);
       const hGap = Math.max(0, a.minX - b.maxX, b.minX - a.maxX);
       if (hGap > Math.max(44, maxH * 0.65)) continue;
+      if (hGap > 12 && minH >= 32 && maxH >= 110 && scaleDiff > 0.62) continue;
       const aCy = (a.minY + a.maxY) / 2;
       const bCy = (b.minY + b.maxY) / 2;
       const overlapY = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
@@ -1635,6 +1954,27 @@ export function segmentStrokesIntoRegions(strokes: WonderStroke[]): Array<{
       const gCy = (box.minY + box.maxY) / 2;
       const maxH = Math.max(box.height, isl.bbox.height);
       const minH = Math.max(1, Math.min(box.height, isl.bbox.height));
+      const isTinyPunct = isl.bbox.width < 18 && isl.bbox.height < 18;
+      const isSmallPunct =
+        isl.strokes.length <= 2 &&
+        isl.bbox.width <= 24 &&
+        isl.bbox.height <= 38;
+      const nearBandVertically =
+        isl.bbox.minY <= box.maxY + Math.max(42, box.height * 0.35) &&
+        isl.bbox.maxY >= box.minY - Math.max(16, box.height * 0.15);
+      if (isSmallPunct && nearBandVertically) {
+        return true;
+      }
+      const scaleDiff = Math.abs(box.height - isl.bbox.height) / Math.max(1, maxH);
+      if (
+        !isTinyPunct &&
+        isl.strokes.length >= 2 &&
+        g.some((x) => x.strokes.length >= 2) &&
+        minH >= 28 &&
+        scaleDiff > 0.58
+      ) {
+        return false;
+      }
       const overlapY = Math.min(box.maxY, isl.bbox.maxY) - Math.max(box.minY, isl.bbox.minY);
       return Math.abs(sCy - gCy) <= Math.max(36, maxH * 0.42) || overlapY >= minH * 0.5;
     });
@@ -1647,28 +1987,32 @@ export function segmentStrokesIntoRegions(strokes: WonderStroke[]): Array<{
 
   const lineGroups: WonderStroke[][] = [];
   for (const band of yBandGroups) {
+    const glyphIslands = band.filter(
+      (x) => x.strokes.length >= 2 || x.bbox.height >= 28
+    );
+    const scaleSource = glyphIslands.length > 0 ? glyphIslands : band;
+    const maxBandHeight = Math.max(...band.map((x) => x.bbox.height));
+    const localBandScale = Math.max(
+      estimateLocalHandwritingScale(scaleSource.map((x) => x.bbox)).medianHeight,
+      maxBandHeight * 0.72
+    );
     const sortedByX = [...band].sort((a, b) => a.bbox.minX - b.bbox.minX);
     let currentGroup: WonderStroke[] = [];
     let currentMaxX = -Infinity;
-    let currentMaxH = 0;
     for (const isl of sortedByX) {
       if (currentGroup.length === 0) {
         currentGroup = [...isl.strokes];
         currentMaxX = isl.bbox.maxX;
-        currentMaxH = isl.bbox.height;
         continue;
       }
       const gap = isl.bbox.minX - currentMaxX;
-      const maxH = Math.max(currentMaxH, isl.bbox.height);
-      if (gap > Math.max(160, maxH * 1.6)) {
+      if (gap > Math.max(120, localBandScale * 2.15)) {
         lineGroups.push(currentGroup);
         currentGroup = [...isl.strokes];
         currentMaxX = isl.bbox.maxX;
-        currentMaxH = isl.bbox.height;
       } else {
         currentGroup.push(...isl.strokes);
         currentMaxX = Math.max(currentMaxX, isl.bbox.maxX);
-        currentMaxH = maxH;
       }
     }
     if (currentGroup.length > 0) {
@@ -1676,7 +2020,12 @@ export function segmentStrokesIntoRegions(strokes: WonderStroke[]): Array<{
     }
   }
 
-  return lineGroups.map((line) => {
+  return lineGroups.flatMap((line): Array<{
+    strokes: WonderStroke[];
+    wordClusters: WonderStroke[][];
+    bbox: WonderBBox;
+    kind: 'text_candidate' | 'in_progress' | 'non_text';
+  }> => {
     const sortedX = [...line].sort((a, b) => a.bbox.minX - b.bbox.minX);
     const wordClusters: WonderStroke[][] = [];
     for (const s of sortedX) {
@@ -1700,12 +2049,22 @@ export function segmentStrokesIntoRegions(strokes: WonderStroke[]): Array<{
 
     const bbox = mergeBoundingBoxes(sortedX.map((s) => s.bbox));
     if (isLikelyNonTextCluster(sortedX)) {
-      return { strokes: sortedX, wordClusters, bbox, kind: 'non_text' };
+      return [{ strokes: sortedX, wordClusters, bbox, kind: 'non_text' }];
     }
-    if (sortedX.length === 1 && bbox.width < 26 && bbox.height < 36 && !sortedX[0].fixtureHintText) {
-      return { strokes: sortedX, wordClusters, bbox, kind: 'in_progress' };
+    if (sortedX.length === 1 && bbox.width < 26 && bbox.height < 36 && !sortedX[0].fixtureHintText && lineGroups.length === 1) {
+      return [{ strokes: sortedX, wordClusters, bbox, kind: 'in_progress' }];
     }
-    return { strokes: sortedX, wordClusters, bbox, kind: 'text_candidate' };
+    if (separateHangulOccurrences && wordClusters.length > 1 &&
+      wordClusters.every((cluster) =>
+        cluster.every((s) => (s.provenance ?? 'freehand_ink') === 'freehand_ink') &&
+        inspectHangulBranch(cluster) !== undefined
+      )) {
+      return wordClusters.map((cluster) => ({
+        strokes: cluster, wordClusters: [cluster],
+        bbox: mergeBoundingBoxes(cluster.map((s) => s.bbox)), kind: 'text_candidate',
+      }));
+    }
+    return [{ strokes: sortedX, wordClusters, bbox, kind: 'text_candidate' }];
   });
 }
 
@@ -1771,13 +2130,17 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
 
   // Detect 1-stroke left-opening ㄷ (C_BRACKET) before LOOP so open C-shapes never match ㅇ
   if (pts.length >= 4 && sw >= 14 && sh >= 14 && sw >= sh * 0.2 && sh >= sw * 0.2) {
-    const p0x = (pts[0].x + dx - minX) / sw;
-    const p0y = (pts[0].y + dy - minY) / sh;
-    const pLx = (pts[pts.length - 1].x + dx - minX) / sw;
-    const pLy = (pts[pts.length - 1].y + dy - minY) / sh;
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const [top, bottom] = first.y <= last.y ? [first, last] : [last, first];
+    const p0x = (top.x + dx - minX) / sw;
+    const p0y = (top.y + dy - minY) / sh;
+    const pLx = (bottom.x + dx - minX) / sw;
+    const pLy = (bottom.y + dy - minY) / sh;
     let hasTopLeft = false;
     let hasBotLeft = false;
     let hasRightMid = false;
+    let hasTopRightArc = false;
     let sumNx = 0;
     for (const p of pts) {
       const nx = (p.x + dx - minX) / sw;
@@ -1786,6 +2149,7 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
       if (nx < 0.35 && ny < 0.42) hasTopLeft = true;
       if (nx < 0.35 && ny > 0.58) hasBotLeft = true;
       if (nx > 0.65 && ny > 0.32 && ny < 0.68) hasRightMid = true;
+      if (nx > 0.72 && ny < 0.45) hasTopRightArc = true;
     }
     const cxNormInStroke = sumNx / pts.length;
     if (
@@ -1796,6 +2160,7 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
       hasTopLeft &&
       hasBotLeft &&
       !hasRightMid &&
+      !(hasTopRightArc && p0y > 0.16 && pLx > 0.6) &&
       cxNormInStroke < 0.65
     ) {
       return mk('C_BRACKET');
@@ -1820,7 +2185,7 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
     }
     const aspect = sw / Math.max(1, sh);
     if (
-      (endDist < diag * 0.58 || Math.abs(totalTurn) >= Math.PI * 1.55) &&
+      (endDist < diag * 0.58 || Math.abs(totalTurn) >= Math.PI * 1.30) &&
       aspect >= 0.22 &&
       aspect <= 2.8 &&
       sh >= 12
@@ -1831,10 +2196,13 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
 
   // Corner & chevron detection (ㄱ CORNER_TR, ㄴ CORNER_BL, 7 TOP_DIAG_SLASH, ∧ LAMBDA)
   if (pts.length >= 3 && sw >= 12 && sh >= 12 && sw >= sh * 0.2 && sh >= sw * 0.2) {
-    const p0x = (pts[0].x + dx - minX) / sw;
-    const p0y = (pts[0].y + dy - minY) / sh;
-    const pLx = (pts[pts.length - 1].x + dx - minX) / sw;
-    const pLy = (pts[pts.length - 1].y + dy - minY) / sh;
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const [left, right] = first.x <= last.x ? [first, last] : [last, first];
+    const p0x = (left.x + dx - minX) / sw;
+    const p0y = (left.y + dy - minY) / sh;
+    const pLx = (right.x + dx - minX) / sw;
+    const pLy = (right.y + dy - minY) / sh;
 
     let bestTR = -Infinity;
     let trPt = { x: 0, y: 0 };
@@ -1869,26 +2237,7 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
     }
   }
 
-  // Diagonal straight strokes (/ DIAG_SLASH or \ DIAG_BACKSLASH) for ㅅ/ㅆ/ㅈ/ㅊ.
-  // Check BEFORE strict VERT/HORIZ when horizontal travel is clearly slanted (>= 20% of height).
-  if (pts.length >= 2) {
-    const p0 = pts[0];
-    const pEnd = pts[pts.length - 1];
-    const ddx = pEnd.x + dx - (p0.x + dx);
-    const ddy = pEnd.y + dy - (p0.y + dy);
-    const endDist = Math.hypot(ddx, ddy);
-    const diag = Math.hypot(sw, sh) || 1;
-    if (
-      endDist >= diag * 0.72 &&
-      Math.abs(ddx) >= Math.max(6, sh * 0.11) &&
-      Math.abs(ddx) / sw >= 0.42 &&
-      Math.abs(ddy) >= Math.max(10, sw * 0.42)
-    ) {
-      return mk(ddx * ddy < 0 ? 'DIAG_SLASH' : 'DIAG_BACKSLASH');
-    }
-  }
-
-  // Compute unpadded point span so visualPad does not obscure short human ticks (e.g. ㅏ/ㅓ/ㅗ)
+  // Compute unpadded point span first so visualPad & mouse wobble never misclassify short ㅏ/ㅓ ticks as diagonals
   let rawMinX = Infinity;
   let rawMaxX = -Infinity;
   let rawMinY = Infinity;
@@ -1904,6 +2253,27 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
   const rawW = Math.max(0, rawMaxX - rawMinX);
   const rawH = Math.max(0, rawMaxY - rawMinY);
 
+  // Diagonal straight strokes (/ DIAG_SLASH or \ DIAG_BACKSLASH) for ㅅ/ㅆ/ㅈ/ㅊ.
+  // Check BEFORE strict VERT/HORIZ when horizontal travel is clearly slanted (>= 45% vertical ratio & >= 16px).
+  if (pts.length >= 2) {
+    const p0 = pts[0];
+    const pEnd = pts[pts.length - 1];
+    const ddx = pEnd.x + dx - (p0.x + dx);
+    const ddy = pEnd.y + dy - (p0.y + dy);
+    const endDist = Math.hypot(ddx, ddy);
+    const diag = Math.hypot(sw, sh) || 1;
+    if (
+      rawH >= 16 &&
+      Math.abs(ddy) >= Math.abs(ddx) * 0.45 &&
+      endDist >= diag * 0.72 &&
+      Math.abs(ddx) >= Math.max(6, sh * 0.11) &&
+      Math.abs(ddx) / sw >= 0.42 &&
+      Math.abs(ddy) >= Math.max(10, sw * 0.42)
+    ) {
+      return mk(ddx * ddy < 0 ? 'DIAG_SLASH' : 'DIAG_BACKSLASH');
+    }
+  }
+
   if (
     (rawH >= Math.max(1, rawW) * 1.85 && rawH >= 6) ||
     sh >= sw * 2.2
@@ -1911,8 +2281,8 @@ function classifyStrokePrimitive(s: WonderStroke, box: WonderBBox): ClassifiedPr
     return mk('VERT');
   }
   if (
-    (rawW >= Math.max(1, rawH) * 1.65 && rawW >= 6) ||
-    sw >= sh * 2.0
+    (rawW >= Math.max(1, rawH) * 1.35 && rawW >= 5) ||
+    sw >= sh * 1.85
   ) {
     return mk('HORIZ');
   }
@@ -2260,7 +2630,19 @@ function matchOpenSyllableParts(
   }
 
   const rightTallVerts = prims.filter(
-    (p) => p.kind === 'VERT' && p.cxNorm >= 0.55 && p.hNorm >= 0.48
+    (p) =>
+      p.kind === 'VERT' &&
+      p.hNorm >= 0.48 &&
+      (p.cxNorm >= 0.52 ||
+        (p.cxNorm >= 0.40 &&
+          prims.some((lp) => lp !== p && lp.kind !== 'HORIZ' && lp.cxNorm < p.cxNorm - 0.08) &&
+          prims.every(
+            (rp) =>
+              rp === p ||
+              rp.cxNorm <= p.cxNorm ||
+              rp.kind === 'HORIZ' ||
+              (rp.kind === 'VERT' && rp.hNorm >= 0.48)
+          )))
   );
 
   // Check Type B: Left Choseong + Right vertical vowel (ㅏ, ㅑ, ㅓ, ㅕ, ㅣ, ㅐ, ㅔ, ㅒ, ㅖ)
@@ -2496,7 +2878,7 @@ function detectLanguageFromText(text: string): WonderLanguage {
   const hasVi =
     /[ăâêôơưđàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(
       text
-    );
+    ) || /\b(tieng han|tieng anh|muon hoc|nghia la)\b/i.test(text);
   const hasEn = /[a-z]/i.test(text) && !hasVi;
   if (hasKo && (hasVi || hasEn)) return 'mixed';
   if (hasKo) return 'ko';
@@ -2593,8 +2975,11 @@ function matchRegionByStrokeGeometry(
 }
 
 export interface RecognitionPipelineOptions {
+  separateHangulOccurrences?: boolean;
   /** Optional external multimodal / vision provider callback (cloud opt-in only) */
   externalTextOverrideByRegionId?: Record<string, { text: string; confidence: number }>;
+  /** Target learning language on this board ('auto' | 'ko' | 'en') */
+  targetLanguage?: WonderTargetLanguage;
 }
 
 /**
@@ -2619,7 +3004,7 @@ export function recognizeHandwritingRegions(
   revision: number,
   options: RecognitionPipelineOptions = {}
 ): WonderRecognitionRegion[] {
-  const segmented = segmentStrokesIntoRegions(strokes);
+  const segmented = segmentStrokesIntoRegions(strokes, options.separateHangulOccurrences);
   const regions: WonderRecognitionRegion[] = [];
 
   segmented.forEach((seg, idx) => {
@@ -2682,10 +3067,24 @@ export function recognizeHandwritingRegions(
       (s) => typeof s.fixtureHintText === 'string' && s.fixtureHintText.trim().length > 0
     );
     const external = options.externalTextOverrideByRegionId?.[regionId];
-    const geoMatch = matchRegionByStrokeGeometry(seg.wordClusters, seg.strokes);
+    const geoMatch =
+      provenance === 'fixture_sample'
+        ? matchRegionByStrokeGeometry(seg.wordClusters, seg.strokes)
+        : null;
+    const targetLang: WonderTargetLanguage = options.targetLanguage ?? 'auto';
     const jamoWordMatches =
       !external && !hintCarrier?.fixtureHintText && !geoMatch
-        ? seg.wordClusters.map((c) => recognizeFreehandHangulCluster(c))
+        ? seg.wordClusters.map((c) => {
+            if (targetLang === 'en') {
+              return recognizeFreehandLatinCluster(c, true);
+            }
+            const koMatch = recognizeFreehandHangulCluster(c);
+            if (koMatch) return koMatch;
+            if (targetLang !== 'ko') {
+              return recognizeFreehandLatinCluster(c, false);
+            }
+            return null;
+          })
         : [];
     const allJamoMatched =
       jamoWordMatches.length > 0 && jamoWordMatches.every((m) => m !== null);
@@ -2720,12 +3119,16 @@ export function recognizeHandwritingRegions(
       recognizedText = validMatches.map((m) => m.text).join(' ');
       confidence =
         validMatches.reduce((acc, m) => acc + m.confidence, 0) / validMatches.length;
-      providerId = 'local-freehand-jamo';
+      providerId = /[A-Za-z]/.test(recognizedText) && !/[\uAC00-\uD7A3]/.test(recognizedText)
+        ? 'local-freehand-latin'
+        : 'local-freehand-jamo';
     } else if (isPartialJamoMatch) {
       recognizedText = matchedJamoItems.map((m) => m.match.text).join(' ');
-      confidence =
+      const avgConf =
         matchedJamoItems.reduce((acc, m) => acc + m.match.confidence, 0) /
         matchedJamoItems.length;
+      const coverage = matchedJamoItems.length / Math.max(1, seg.wordClusters.length);
+      confidence = Math.min(0.75, avgConf * coverage * 0.82);
       providerId = 'local-freehand-jamo';
     }
 
@@ -2773,11 +3176,11 @@ export function recognizeHandwritingRegions(
         : seg.wordClusters.length === words.length
           ? seg.wordClusters[wIdx]
           : seg.wordClusters[
-              Math.min(
-                seg.wordClusters.length - 1,
-                Math.floor((wIdx / Math.max(1, words.length)) * seg.wordClusters.length)
-              )
-            ];
+          Math.min(
+            seg.wordClusters.length - 1,
+            Math.floor((wIdx / Math.max(1, words.length)) * seg.wordClusters.length)
+          )
+          ];
 
       const wordBox = mergeBoundingBoxes(cluster.map((s) => s.bbox));
       spans.push({
@@ -2812,11 +3215,13 @@ export function recognizeHandwritingRegions(
     }
 
     const fragmentIncomplete = isKoreanFragmentInProgress(recognizedText);
-    const completeness = fragmentIncomplete
-      ? 'in_progress'
-      : confidence < 0.62
-        ? 'low_confidence'
-        : 'complete';
+    const completeness = isPartialJamoMatch
+      ? 'low_confidence'
+      : fragmentIncomplete
+        ? 'in_progress'
+        : confidence < 0.62
+          ? 'low_confidence'
+          : 'complete';
 
     regions.push({
       regionId,
@@ -2831,11 +3236,13 @@ export function recognizeHandwritingRegions(
       language: detectLanguageFromText(recognizedText),
       confidence,
       completeness,
-      recognitionStatus: fragmentIncomplete
-        ? 'IN_PROGRESS'
-        : isPartialJamoMatch || confidence < 0.62
-          ? 'PARTIALLY_RECOGNIZED'
-          : 'RECOGNIZED',
+      recognitionStatus: isPartialJamoMatch
+        ? 'PARTIALLY_RECOGNIZED'
+        : fragmentIncomplete
+          ? 'IN_PROGRESS'
+          : confidence < 0.62
+            ? 'PARTIALLY_RECOGNIZED'
+            : 'RECOGNIZED',
       provenance,
       alternativeCandidates: alternatives,
       spans,
@@ -3388,6 +3795,52 @@ export function analyzeBoardPedagogy(params: {
     }
 
     const txt = region.recognizedText;
+    const spacingHyps = decodeKoreanSpacingHypotheses(txt);
+    const topSpacingHyp = spacingHyps[0];
+    const decodedText = topSpacingHyp?.proposedText || txt;
+    let effectiveSpans = region.spans;
+    if (decodedText !== txt && topSpacingHyp && topSpacingHyp.tokens.length > 0) {
+      const charPool = region.characterSpans.filter((c) => c.text.trim().length > 0);
+      let cCursor = 0;
+      let txtCursor = 0;
+      const rebuilt: WonderRecognitionSpan[] = [];
+      for (const tok of topSpacingHyp.tokens) {
+        const cleanCount = tok.replace(/\s+/g, '').length;
+        const matchedChars = charPool.slice(cCursor, cCursor + cleanCount);
+        cCursor += cleanCount;
+        const startIdx = decodedText.indexOf(tok, txtCursor);
+        const sIdx = startIdx >= 0 ? startIdx : txtCursor;
+        const eIdx = sIdx + tok.length;
+        txtCursor = eIdx;
+        if (matchedChars.length > 0) {
+          rebuilt.push({
+            text: tok,
+            startIndex: sIdx,
+            endIndex: eIdx,
+            strokeIds: Array.from(new Set(matchedChars.flatMap((m) => m.strokeIds))),
+            bbox: mergeBoundingBoxes(matchedChars.map((m) => m.bbox)),
+            confidence: region.confidence,
+          });
+        } else {
+          rebuilt.push({
+            text: tok,
+            startIndex: sIdx,
+            endIndex: eIdx,
+            strokeIds: region.strokeIds,
+            bbox: region.bbox,
+            confidence: region.confidence,
+          });
+        }
+      }
+      if (rebuilt.length > 0) {
+        effectiveSpans = rebuilt;
+      }
+    }
+    const analysisRegion: WonderRecognitionRegion =
+      effectiveSpans === region.spans && decodedText === txt
+        ? region
+        : { ...region, recognizedText: decodedText, spans: effectiveSpans };
+
     let regionHadError = false;
     const alreadyAnnotated = (targetText: string, type: WonderAnnotation['annotation_type']) =>
       existingAnnotations.some(
@@ -3413,12 +3866,18 @@ export function analyzeBoardPedagogy(params: {
         lowerVi.includes('ăn') ||
         lowerVi.includes('học') ||
         lowerVi.includes('tiếng hàn') ||
+        lowerVi.includes('tiếng anh') ||
+        lowerVi.includes('english') ||
         lowerVi.includes('chào'))
     ) {
       const cardAlreadyExists = existingTeachingCards.some((c) =>
         c.sourceRevision >= region.revision - 1 && c.koreanPhrase.length > 0
       );
       if (!cardAlreadyExists) {
+        const isEnglishDiscovery =
+          board.targetLanguage === 'en' ||
+          lowerVi.includes('tiếng anh') ||
+          lowerVi.includes('english');
         let phrase = '안녕하세요. 만나서 반갑습니다.';
         let ipa = '[annjʌŋhasejo]';
         let explanation =
@@ -3428,7 +3887,13 @@ export function analyzeBoardPedagogy(params: {
           { token: '만나서 반갑습니다', meaningVi: 'rất vui được gặp bạn' },
         ];
 
-        if (lowerVi.includes('cà phê') || lowerVi.includes('trà')) {
+        if (isEnglishDiscovery) {
+          const enCard = buildEnglishDiscoveryCard(txt);
+          phrase = enCard.phrase;
+          ipa = enCard.ipa;
+          explanation = enCard.explanation;
+          breakdown = enCard.breakdown;
+        } else if (lowerVi.includes('cà phê') || lowerVi.includes('trà')) {
           phrase = '커피 한 잔 주세요.';
           ipa = '[kʰʌpʰi han tɕan tɕusejo]';
           explanation =
@@ -3507,8 +3972,8 @@ export function analyzeBoardPedagogy(params: {
     // -----------------------------------------------------------------
     // Scenario A — Past Time Adverb + Present Tense Ending (어제/지난주 ... -아요/어요)
     // -----------------------------------------------------------------
-    const hasPastAdverb = /(어제|그저께|지난주|작년|아까)/.test(txt);
-    const presentVerbSpan = findSpanByToken(region, (w) =>
+    const hasPastAdverb = /(어제|그저께|지난주|작년|아까)/.test(decodedText);
+    const presentVerbSpan = findSpanByToken(analysisRegion, (w) =>
       /(가요|와요|봐요|마셔요|먹어요|자요|읽어요|배우요|공부해요|일해요|운동해요|만나요|해요)[.!?]?$/.test(
         w
       )
@@ -3596,11 +4061,11 @@ export function analyzeBoardPedagogy(params: {
     // -----------------------------------------------------------------
     // Scenario B1 — Subject marker -이/-가 instead of Object marker -을/-를
     // -----------------------------------------------------------------
-    const hasTransitiveVerb = TRANSITIVE_FOOD_OR_OBJECT_VERBS.some((v) => txt.includes(v));
+    const hasTransitiveVerb = TRANSITIVE_FOOD_OR_OBJECT_VERBS.some((v) => decodedText.includes(v));
     if (hasTransitiveVerb) {
       // Find token with subject particle 가 or 이 following topic저는/나는
       const objectNounSpan = findSpanByToken(
-        region,
+        analysisRegion,
         (w,) =>
           w.length >= 2 &&
           !w.startsWith('저') &&
@@ -3700,7 +4165,7 @@ export function analyzeBoardPedagogy(params: {
     ]);
     let dynamicErrorTriggered = false;
 
-    for (const sp of region.spans) {
+    for (const sp of analysisRegion.spans) {
       const cleanWord = sp.text.replace(/[.!?]/g, '');
       if (cleanWord.length < 2) continue;
 
@@ -3743,7 +4208,7 @@ export function analyzeBoardPedagogy(params: {
           cleanWord.endsWith('카페에') ||
           cleanWord.endsWith('도서관에') ||
           cleanWord.endsWith('회사에')) &&
-        /(공부해요|공부했어요|일해요|일했어요|먹어요|마셔요|운동해요|만나요)/.test(txt)
+        /(공부해요|공부했어요|일해요|일했어요|먹어요|마셔요|운동해요|만나요)/.test(decodedText)
       ) {
         stem = cleanWord.slice(0, -1);
         badFound = true;
@@ -3798,21 +4263,139 @@ export function analyzeBoardPedagogy(params: {
       regionHadError = true;
     }
 
+    // Gentle spacing suggestion when Case B (missing spaces) is detected without grammar errors
+    if (
+      topSpacingHyp?.spacingIssue === 'missing_spaces' &&
+      !regionHadError &&
+      !alreadyAnnotated(txt, 'spelling_correction') &&
+      (board.aiMode === 'tutor' || board.aiMode === 'review' || board.aiMode === 'discovery')
+    ) {
+      const { noteBox, placement, arrow } = computeCollisionFreePlacement({
+        targetBox: region.bbox,
+        desiredWidth: 276,
+        desiredHeight: 110,
+        preferredOrder: ['below', 'right', 'above', 'left'],
+        occupiedBoxes,
+        activeWritingBox,
+      });
+      occupiedBoxes.push(noteBox);
+      createdAnnotations.push(
+        buildValidatedAnnotation({
+          annotation_id: `ann_${board.id}_space_${region.regionId}`,
+          board_id: board.id,
+          source_revision: region.revision,
+          source_stroke_ids: region.strokeIds,
+          recognized_text: txt,
+          target_text: txt,
+          target_span: { start: 0, end: txt.length },
+          target_geometry: region.bbox,
+          note_geometry: noteBox,
+          arrow_path: arrow,
+          annotation_type: 'spelling_correction',
+          linguistic_category: 'naturalness',
+          severity: 'gentle',
+          confidence: Math.min(0.92, region.confidence),
+          suggested_correction: topSpacingHyp.proposedText,
+          explanation: `Bạn viết dính liền các từ. Trong tiếng Hàn nên tách khoảng trắng giữa các cụm từ: "${topSpacingHyp.proposedText}".`,
+          hint: 'Chừa khoảng trống giữa chủ ngữ, tân ngữ và động từ.',
+          visual_style: {
+            shape: 'scalloped_cloud',
+            accentColor: theme.aiSuggestionHex,
+          },
+          placement_preference: placement,
+          learning_concept_ids: ['kc_productive_orthography'],
+          created_at: Date.now(),
+          status: 'active',
+        })
+      );
+      regionHadError = true;
+    }
+
+    // -----------------------------------------------------------------
+    // English Grammar, Tense, Article & L1 Interference Analysis
+    // -----------------------------------------------------------------
+    if (
+      (region.language === 'en' || region.language === 'mixed') &&
+      (board.targetLanguage ?? 'auto') !== 'ko'
+    ) {
+      const enIssues = analyzeEnglishPedagogyForRegion(analysisRegion);
+      for (const issue of enIssues) {
+        regionHadError = true;
+        if (alreadyAnnotated(issue.targetText, issue.annotationType)) continue;
+        const { noteBox, placement, arrow } = computeCollisionFreePlacement({
+          targetBox: issue.bbox,
+          desiredWidth: 270,
+          desiredHeight: 124,
+          preferredOrder: ['below', 'right', 'above', 'left'],
+          occupiedBoxes,
+          activeWritingBox,
+        });
+        occupiedBoxes.push(noteBox);
+
+        createdAnnotations.push(
+          buildValidatedAnnotation({
+            annotation_id: `ann_${board.id}_en_${region.regionId}_${createdAnnotations.length}`,
+            board_id: board.id,
+            source_revision: region.revision,
+            source_stroke_ids: issue.strokeIds,
+            recognized_text: txt,
+            target_text: issue.targetText,
+            target_span: { start: issue.spanStart, end: issue.spanEnd },
+            target_geometry: issue.bbox,
+            note_geometry: noteBox,
+            arrow_path: arrow,
+            annotation_type: issue.annotationType,
+            linguistic_category: issue.category,
+            severity: 'error',
+            confidence: Math.min(0.95, region.confidence),
+            suggested_correction: issue.suggestedCorrection,
+            explanation: issue.explanationVi,
+            hint: issue.hintVi,
+            visual_style: {
+              shape: 'scalloped_cloud',
+              accentColor: theme.aiCorrectionHex,
+            },
+            placement_preference: placement,
+            learning_concept_ids: issue.conceptIds,
+            created_at: Date.now(),
+            status: 'active',
+          })
+        );
+        regionHadError = true;
+      }
+    }
+
     // -----------------------------------------------------------------
     // Scenario E — Positive Feedback when correct (on tutor / review / self-fix)
     // -----------------------------------------------------------------
+    const hasExistingActiveErrorInRegion = existingAnnotations.some(
+      (a) =>
+        a.status === 'active' &&
+        a.severity === 'error' &&
+        !resolvedAnnotationIds.includes(a.annotation_id) &&
+        a.source_stroke_ids.some((id) => region.strokeIds.includes(id))
+    );
+    const anyRegionError = regionHadError || hasExistingActiveErrorInRegion;
+
     const isCleanValidKorean =
-      !regionHadError &&
+      !anyRegionError &&
       region.language === 'ko' &&
-      (txt.includes('갔어요') ||
-        txt.includes('사과를 먹어요') ||
-        txt.includes('맛있어요') ||
-        txt.includes('사람이에요') ||
-        txt.includes('학생이에요') ||
-        txt.includes('오늘 학교에 가요'));
+      (decodedText.includes('갔어요') ||
+        decodedText.includes('사과를 먹어요') ||
+        decodedText.includes('맛있어요') ||
+        decodedText.includes('사람이에요') ||
+        decodedText.includes('학생이에요') ||
+        decodedText.includes('오늘 학교에 가요'));
+
+    const isCleanValidEnglish =
+      !anyRegionError &&
+      (region.language === 'en' || region.language === 'mixed') &&
+      (board.targetLanguage ?? 'auto') !== 'ko' &&
+      region.spans.length >= 3 &&
+      (/[.!?]$/.test(txt.trim()) || resolvedAnnotationIds.length > 0);
 
     if (
-      isCleanValidKorean &&
+      (isCleanValidKorean || isCleanValidEnglish) &&
       (board.aiMode === 'tutor' ||
         board.aiMode === 'review' ||
         resolvedAnnotationIds.length > 0)
@@ -3829,9 +4412,13 @@ export function analyzeBoardPedagogy(params: {
         });
         occupiedBoxes.push(noteBox);
 
-        const praiseText = resolvedAnnotationIds.length > 0
-          ? '잘했어요! Đúng rồi, bạn đã tự sửa rất chuẩn.'
-          : '잘했어요! Câu viết tự nhiên và đúng tiểu từ/thì.';
+        const praiseText = isCleanValidEnglish
+          ? resolvedAnnotationIds.length > 0
+            ? 'Great job! Câu tiếng Anh đã được sửa chính xác rồi.'
+            : 'Great job! Câu tiếng Anh đúng ngữ pháp và tự nhiên.'
+          : resolvedAnnotationIds.length > 0
+            ? '잘했어요! Đúng rồi, bạn đã tự sửa rất chuẩn.'
+            : '잘했어요! Câu viết tự nhiên và đúng tiểu từ/thì.';
 
         createdAnnotations.push(
           buildValidatedAnnotation({
@@ -3846,10 +4433,10 @@ export function analyzeBoardPedagogy(params: {
             note_geometry: noteBox,
             arrow_path: arrow,
             annotation_type: 'positive_feedback',
-            linguistic_category: txt.includes('갔어요') ? 'tense' : 'naturalness',
+            linguistic_category: txt.includes('갔어요') || isCleanValidEnglish ? 'tense' : 'naturalness',
             severity: 'praise',
             confidence: Math.min(0.95, region.confidence),
-            suggested_correction: '',
+            suggested_correction: isCleanValidEnglish ? 'Great job!' : '',
             explanation: praiseText,
             hint: 'Tiếp tục thử mở rộng thêm câu mới trên bảng.',
             visual_style: {
@@ -3889,7 +4476,7 @@ export function describeKoreanSyllableOrWordVi(text: string): {
   explanation: string;
   hint: string;
 } | null {
-  const clean = text.trim();
+  const clean = text.trim().normalize('NFC');
   const WORD_DICTIONARY: Record<
     string,
     { header: string; explanation: string; hint: string }
@@ -3968,7 +4555,7 @@ export function describeKoreanSyllableOrWordVi(text: string): {
     return WORD_DICTIONARY[clean];
   }
 
-  const JUNG_ROM: Record<string, string> = {
+  const VOWEL_IPA: Record<string, string> = {
     'ㅏ': '[a]',
     'ㅑ': '[ja]',
     'ㅓ': '[ʌ]',
@@ -4000,32 +4587,24 @@ export function describeKoreanSyllableOrWordVi(text: string): {
     '워': 'Ví dụ: 고마워 (cảm ơn), 추워요 (lạnh).',
   };
 
+  const unit = decomposeHangulUnit(clean);
+  if (unit?.initial) {
+    const parts = [unit.initial, unit.vowel, unit.final].filter(Boolean).join(' + ');
+    return {
+      header: unit.initial === 'ㅇ' && !unit.final && VOWEL_IPA[unit.vowel]
+        ? `${clean} ${VOWEL_IPA[unit.vowel]}` : clean,
+      explanation: `Âm tiết Hangul ${clean} = ${parts}.${unit.initial === 'ㅇ' ? ' Phụ âm đầu ㅇ không phát âm.' : ''}${unit.final ? ` Phụ âm cuối là ${unit.final}.` : ''}`,
+      hint: EXAMPLE_BY_SYLLABLE[clean] ?? '',
+    };
+  }
+  if (unit && VOWEL_IPA[unit.vowel]) {
+    return {
+      header: unit.vowel,
+      explanation: `${unit.vowel} là jamo nguyên âm. Ký hiệu IPA của nguyên âm này là ${VOWEL_IPA[unit.vowel]}.`,
+      hint: 'Ghép với phụ âm đầu ㅇ để tạo một âm tiết.',
+    };
+  }
   if (clean.length === 1) {
-    const code = clean.charCodeAt(0);
-    if (code >= 0xac00 && code <= 0xd7a3) {
-      const idx = code - 0xac00;
-      const cho = JAMO_CHOSEONG[Math.floor(idx / 588)];
-      const jJung = JAMO_JUNGSEONG[Math.floor((idx % 588) / 28)];
-      const jung = JUNG_ROM[jJung] ?? '';
-      const jong = JAMO_JONGSEONG[idx % 28];
-      const choDesc = cho === 'ㅇ' ? 'ㅇ (âm câm đầu)' : `phụ âm ${cho}`;
-      const rom = `${clean} ${jung}`.trim();
-      const ex =
-        EXAMPLE_BY_SYLLABLE[clean] ??
-        'Thử ghép thêm chữ thành từ mới ngay bên cạnh nhé.';
-      return {
-        header: rom,
-        explanation: `Âm tiết "${clean}" = ${choDesc} + ${jJung} ${jung}${jong ? ` + patchim ${jong}` : ''}. ${ex}`,
-        hint: `Bạn đã viết chữ "${clean}" rất rõ nét.`,
-      };
-    }
-    if (JUNG_ROM[clean]) {
-      return {
-        header: `${clean} ${JUNG_ROM[clean]}`,
-        explanation: `Nguyên âm cơ bản "${clean}" phát âm ${JUNG_ROM[clean]}. Thử ghép với phụ âm ㅇ (ví dụ: 아/어/오/우).`,
-        hint: 'Thêm ㅇ ở bên trái hoặc bên trên để thành âm tiết hoàn chỉnh.',
-      };
-    }
     if (/[\u3131-\u314E]/.test(clean)) {
       return {
         header: `Phụ âm ${clean}`,
@@ -4046,7 +4625,7 @@ export function describeKoreanSyllableOrWordVi(text: string): {
     const hasB = hasBatchim(lastCh);
     return {
       header: clean,
-      explanation: `Từ "${clean}" gồm ${clean.length} âm tiết: ${parts.join(' · ')}. Âm cuối ${hasB ? 'có patchim (-은/-이/-이에요)' : 'không patchim (-는/-가/-예요)'}.`,
+      explanation: `Chuỗi "${clean}" gồm ${clean.length} âm tiết: ${parts.join(' · ')}. Âm tiết cuối ${hasB ? 'có patchim (-은/-이/-이에요)' : 'không có patchim (-는/-가/-예요)'}.`,
       hint: `Thử đặt một câu ngắn với "${clean}".`,
     };
   }
@@ -4139,6 +4718,22 @@ export function executeGestureQuery(params: {
 
   const text = recognizedJoined || '가';
 
+  if (intent === 'practice_exercise' && decomposeHangulUnit(text)) {
+    const createdAt = Date.now();
+    return {
+      teachingCard: {
+        cardId: `card_practice_${createdAt}`, boardId: board.id, sourceRevision: board.revision,
+        geometry: noteBox, titleVi: `Luyện viết ${text}`, koreanPhrase: text, practiceTarget: text,
+        explanationVi: `Viết ${text} ngay dưới thẻ này.`, breakdown: [],
+        learningConceptIds: [`handwriting:${text}`], createdAt,
+      },
+      event: {
+        eventId: `evt_practice_${createdAt}`, boardId: board.id, eventType: 'hint_requested',
+        conceptIds: [`handwriting:${text}`], recognizedText: text, confirmed: true, timestamp: createdAt,
+      },
+    };
+  }
+
   if (intent === 'trace_guide' || intent === 'example') {
     const phrase = text.includes('커피') ? '커피 한 잔 주세요.' : text;
     const card: WonderTeachingCard = {
@@ -4183,13 +4778,20 @@ export function executeGestureQuery(params: {
     };
   }
 
-  const singleDesc = describeKoreanSyllableOrWordVi(text);
+  const textLang = detectLanguageFromText(text);
+  const singleDesc = textLang === 'en' ? null : describeKoreanSyllableOrWordVi(text);
+  const enDesc = textLang === 'en' ? describeEnglishWordVi(text) : null;
   let headerCorr = '';
   let explanation = `Giải thích nhanh cho "${text}": `;
   let hint = 'Chạm lại vào vùng chữ để tiếp tục luyện.';
 
   if (intent === 'translate') {
-    if (text.includes('학교')) explanation = `Dịch nghĩa: "Hôm qua tôi đi đến trường."`;
+    if (textLang === 'en') {
+      headerCorr = enDesc ? enDesc.header : `${text} [EN]`;
+      explanation = enDesc
+        ? enDesc.explanation
+        : `Dịch & phân tích câu tiếng Anh "${text}": chú ý chủ ngữ, thì động từ và mạo từ a/an/the.`;
+    } else if (text.includes('학교')) explanation = `Dịch nghĩa: "Hôm qua tôi đi đến trường."`;
     else if (text.includes('사과')) explanation = `Dịch nghĩa: "Tôi ăn táo."`;
     else if (singleDesc) {
       headerCorr = singleDesc.header;
@@ -4217,17 +4819,27 @@ export function executeGestureQuery(params: {
         },
       };
     }
-    explanation = singleDesc
-      ? singleDesc.explanation
-      : `"${text}" hiện đang đúng ngữ pháp cơ bản.`;
+    explanation = enDesc
+      ? enDesc.explanation
+      : singleDesc
+        ? singleDesc.explanation
+        : `"${text}" hiện đang đúng ngữ pháp cơ bản.`;
   } else if (intent === 'practice_exercise') {
-    explanation = singleDesc
-      ? `Thực hành ghép vần từ "${text}": hãy viết thêm từ "${text === '아' ? '아이' : `${text}요`}" bên dưới.`
-      : `Bài tập nhỏ: Hãy viết lại "${text}" ở dạng phủ định (-지 않아요) ngay bên dưới.`;
+    explanation = textLang === 'en'
+      ? `Bài tập tiếng Anh với "${text}": hãy thử đổi câu sang thì quá khứ hoặc phủ định ngay bên dưới.`
+      : singleDesc
+        ? `Thực hành ghép vần từ "${text}": hãy viết thêm từ "${text === '아' ? '아이' : `${text}요`}" bên dưới.`
+        : `Bài tập nhỏ: Hãy viết lại "${text}" ở dạng phủ định (-지 않아요) ngay bên dưới.`;
+  } else if (enDesc) {
+    headerCorr = enDesc.header;
+    explanation = enDesc.explanation;
+    hint = enDesc.hint;
   } else if (singleDesc) {
     headerCorr = singleDesc.header;
     explanation = singleDesc.explanation;
     hint = singleDesc.hint;
+  } else if (textLang === 'en') {
+    explanation = `Cụm tiếng Anh "${text}": kiểm tra thì động từ, sự hòa hợp S-V và mạo từ (a/an/the).`;
   } else {
     explanation = `Phân tích cụm "${text}": kiểm tra tiểu từ cuối danh từ và đuôi câu lịch sự -아/어요.`;
   }

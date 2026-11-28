@@ -1,0 +1,74 @@
+{
+  "capturedAt": "2026-11-27T10:05:28.867Z",
+  "trace": [
+    {
+      "step": "local_health",
+      "health": {
+        "ok": true,
+        "providers": {
+          "deepseek": true,
+          "gemini": false,
+          "openai": false
+        },
+        "visionModels": {
+          "deepseek": "deepseek-flash",
+          "gemini": null,
+          "openai": null
+        },
+        "tutorReady": true,
+        "visionReady": true,
+        "authRequired": false
+      }
+    },
+    {
+      "step": "zoom_invariant_crops",
+      "cropSizes": [
+        {
+          "zoom": 0.25,
+          "w": 1280,
+          "h": 243,
+          "scale": 0.8254533705905152
+        },
+        {
+          "zoom": 0.45,
+          "w": 1280,
+          "h": 243,
+          "scale": 0.8254533705905152
+        },
+        {
+          "zoom": 1,
+          "w": 1280,
+          "h": 243,
+          "scale": 0.8254533705905152
+        },
+        {
+          "zoom": 2,
+          "w": 1280,
+          "h": 243,
+          "scale": 0.8254533705905152
+        }
+      ],
+      "regionCount": 1
+    },
+    {
+      "step": "mocked_vision_nado_gayo",
+      "recognizedText": "나도 가요.",
+      "providerId": "gemini-gateway",
+      "diag": [
+        {
+          "providerId": "gemini-gateway",
+          "req": true,
+          "crop": "1280x243",
+          "raw": "나도 가요."
+        }
+      ]
+    },
+    {
+      "step": "mocked_vision_haksaeng_yeyo",
+      "recognizedText": "저는 학생예요.",
+      "errors": [
+        "학생예요->학생이에요"
+      ]
+    }
+  ]
+}

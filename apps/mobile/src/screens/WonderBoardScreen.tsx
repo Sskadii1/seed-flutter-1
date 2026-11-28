@@ -23,13 +23,17 @@ import {
   WonderLearningEvent,
   WonderRecognitionDiagnosticEntry,
   WonderStroke,
+  WonderTargetLanguage,
   WonderTeacherState,
   WonderThemeTokens,
   WonderToolType,
 } from '@seed/schema';
 import {
+  appendConversationMemoryTurn,
   applyConfirmedUserTranscript,
+  boxesIntersect,
   buildBoardContextModel,
+  computeAdaptiveAnalysisDelayMs,
   computeAdaptiveAnnotationTypography,
   computeAnnotationPhaseTimings,
   computeCollisionFreePlacement,
@@ -37,6 +41,7 @@ import {
   computeStrokeBoundingBox,
   createEmptyWonderBoard,
   deduplicateWonderAnnotations,
+  decomposeHangulUnit,
   estimateFontRunWidthFallback,
   evaluateWonderBoardBenchmarkV3,
   executeGestureQuery,
@@ -44,17 +49,22 @@ import {
   generateHandwrittenStrokesForText,
   generateScallopedCloudGeometry,
   getWonderBoardAiModeLabel,
+  hiddenAnnotationArrow,
   mergeBoundingBoxes,
   orchestrateWonderTutor,
+  rasterizeTextToBinaryMask,
   recognizeHandwritingRegions,
   recognizeWithHybridPipeline,
   reconcileAnnotationsWithStrokes,
+  routeAnnotationArrow,
   segmentMixedLanguageRuns,
   segmentUnicodeGraphemes,
+  selectInterventionGranularity,
   sliceArrowPathAtProgress,
   sliceCloudPathAtProgress,
   sliceHangulDemoAtProgress,
   sliceMixedLanguageReveal,
+  synthesizeHandwritingFromMask,
   translateStrokes,
   WonderAnimationPhaseTimings,
   WonderFontRun,
@@ -68,7 +78,7 @@ import { FONT_CHALK, FONT_SANS, waitForWonderFontsReady } from '../lib/typograph
 import {
   createBrowserVisionProvider,
   fetchWonderServerHealth,
-  renderRegionInkCropDataUrl,
+  renderObservationWindowSnapshot,
   requestWonderServerTutor,
   WonderServerHealth,
   WonderServerTutorAction,
@@ -179,6 +189,26 @@ const SPEED_OPTIONS: Array<{ key: WonderAnimationSpeed; label: string; factor: n
   { key: 'instant', label: 'Tức thì', factor: 0 },
 ];
 
+const TARGET_LANG_OPTIONS: Array<{
+  key: WonderTargetLanguage;
+  shortLabel: string;
+  label: string;
+}> = [
+  { key: 'auto', shortLabel: 'Hàn + Anh', label: 'Tự động (Hàn + Anh)' },
+  { key: 'ko', shortLabel: 'Tiếng Hàn', label: 'Tiếng Hàn (KO)' },
+  { key: 'en', shortLabel: 'Tiếng Anh', label: 'Tiếng Anh (EN)' },
+];
+
+function getNextTargetLanguage(cur?: WonderTargetLanguage): WonderTargetLanguage {
+  if (cur === 'ko') return 'en';
+  if (cur === 'en') return 'auto';
+  return 'ko';
+}
+
+function getTargetLangShortLabel(cur?: WonderTargetLanguage): string {
+  return TARGET_LANG_OPTIONS.find((o) => o.key === (cur ?? 'auto'))?.shortLabel ?? 'Hàn + Anh';
+}
+
 let sharedMeasureCtx: {
   font: string;
   measureText(text: string): { width: number };
@@ -225,6 +255,8 @@ interface ResolvedAnnotationVisualLayout {
   placement: WonderAnnotation['placement_preference'];
   arrow: WonderAnnotation['arrow_path'];
   cloud: ReturnType<typeof generateScallopedCloudGeometry>;
+  cloudVisible: boolean;
+  noteVisible: boolean;
   headerFontSize: number;
   explFontSize: number;
   explLineHeight: number;
@@ -468,59 +500,117 @@ function buildResolvedAnnotationLayouts(
   board: WonderBoardDocument,
   activeAnnotations: WonderAnnotation[],
   activeWritingBox: WonderBBox | null,
-  viewportWidth = 1200
+  viewportWidth = 1200,
+  viewportHeight?: number,
+  sidebarWidthPx = 0,
+  toolbarCollapsed = false
 ): Record<string, ResolvedAnnotationVisualLayout> {
   const layoutMap: Record<string, ResolvedAnnotationVisualLayout> = {};
-  const wordBoxes = board.regions.flatMap((r) => r.spans.map((sp) => sp.bbox));
-  const strokeBoxes = board.strokes.filter((s) => !s.deleted).map((s) => s.bbox);
-  const teachingBoxes = board.teachingCards.map((c) => c.geometry);
-  const placedClouds: WonderBBox[] = [];
+  const wordBoxes = board.regions.filter((r) => r.completeness !== 'non_text')
+    .flatMap((r) => r.spans.length ? r.spans.map((sp) => sp.bbox) : [r.bbox]);
+  const strokes = board.strokes.filter((s) => !s.deleted && s.tool !== 'eraser_pixel');
+  const strokeBoxes = strokes.map((s) => s.bbox);
+  const teachingBoxes = [
+    ...board.teachingCards.map((c) => c.geometry),
+    ...(board.hangulDemos ?? []).map((demo) => demo.geometry),
+  ];
+  const cloudById = new Map<string, {
+    geometry: ReturnType<typeof generateScallopedCloudGeometry>;
+    visible: boolean;
+  }>();
   const placedNotes: WonderBBox[] = [];
-  const vScale = Math.max(0.35, board.viewport.scale || 1);
+  const exactScale = Math.max(0.25, board.viewport.scale || 1);
+  const vScale = Math.max(0.35, exactScale);
   const isNarrowPhone = viewportWidth < 680;
 
-  for (const ann of activeAnnotations) {
-    const neighbors = wordBoxes.filter(
-      (wb) =>
-        Math.abs(wb.minX - ann.target_geometry.minX) > 4 ||
-        Math.abs(wb.minY - ann.target_geometry.minY) > 4
-    );
-    const cloud = generateScallopedCloudGeometry(
-      ann.target_geometry,
-      ann.cloud_seed ?? 1,
-      neighbors
-    );
-    placedClouds.push(cloud.outerBounds);
+  let worldSafeBounds: { minX: number; minY: number; maxX: number; maxY: number } | undefined;
+  const uiOverlayBlockers: WonderBBox[] = [];
+  if (typeof viewportHeight === 'number' && viewportHeight > 0) {
+    const topChromeH = isNarrowPhone ? 98 : 58;
+    const stageW = Math.max(300, viewportWidth - sidebarWidthPx);
+    const stageH = Math.max(220, viewportHeight - topChromeH);
+    const bottomDockReservePx = toolbarCollapsed ? 64 : isNarrowPhone ? 136 : 122;
+    const offX = board.viewport.offsetX || 0;
+    const offY = board.viewport.offsetY || 0;
+    const toWorldX = (sx: number) => (sx - offX) / exactScale;
+    const toWorldY = (sy: number) => (sy - offY) / exactScale;
+
+    worldSafeBounds = {
+      minX: toWorldX(12),
+      minY: toWorldY(12),
+      maxX: toWorldX(stageW - 12),
+      maxY: toWorldY(Math.max(100, stageH - bottomDockReservePx)),
+    };
+
+    const tbLeft = toWorldX(Math.max(0, stageW * 0.06));
+    const tbTop = toWorldY(Math.max(96, stageH - bottomDockReservePx));
+    const tbRight = toWorldX(Math.min(stageW, stageW * 0.94));
+    const tbBottom = toWorldY(stageH + 24);
+    uiOverlayBlockers.push({
+      minX: tbLeft,
+      minY: tbTop,
+      maxX: tbRight,
+      maxY: tbBottom,
+      width: Math.max(40, tbRight - tbLeft),
+      height: Math.max(30, tbBottom - tbTop),
+    });
   }
 
-  for (let i = 0; i < activeAnnotations.length; i++) {
-    const ann = activeAnnotations[i];
-    const cloud = generateScallopedCloudGeometry(
-      ann.target_geometry,
-      ann.cloud_seed ?? 1,
-      wordBoxes.filter(
-        (wb) =>
-          Math.abs(wb.minX - ann.target_geometry.minX) > 4 ||
-          Math.abs(wb.minY - ann.target_geometry.minY) > 4
-      )
-    );
+  const ordered = [...activeAnnotations].sort((a, b) =>
+    Number(b.severity === 'error') - Number(a.severity === 'error') ||
+    a.created_at - b.created_at || a.annotation_id.localeCompare(b.annotation_id));
+  for (const ann of ordered) {
+    const targetIds = new Set(ann.source_stroke_ids);
+    const neighbors = strokes.filter((s) => !targetIds.has(s.id)).map((s) => s.bbox);
+    const occupiedClouds = [...cloudById.values()].filter((p) => p.visible).map((p) => p.geometry.outerBounds);
+    const cloudObstacles = [...neighbors, ...occupiedClouds, ...teachingBoxes, ...uiOverlayBlockers];
+    if (activeWritingBox) cloudObstacles.push(activeWritingBox);
+    const fits = (geometry: ReturnType<typeof generateScallopedCloudGeometry>) =>
+      !cloudObstacles.some((b) => boxesIntersect(b, geometry.outerBounds, 2));
+    const compact = Boolean(ann.teaching_activity_id || decomposeHangulUnit(ann.target_text) ||
+      ann.granularity === 'CHARACTER');
+    let geometry = generateScallopedCloudGeometry(ann.target_geometry, ann.cloud_seed, neighbors, compact);
+    if (!compact && !fits(geometry)) {
+      geometry = generateScallopedCloudGeometry(ann.target_geometry, ann.cloud_seed, neighbors, true);
+    }
+    cloudById.set(ann.annotation_id, { geometry, visible: ann.visual_style.shape !== 'chalk_tick' && fits(geometry) });
+  }
+  const visibleClouds = [...cloudById.entries()].filter(([, cloud]) => cloud.visible);
+  const fitsViewport = (box: WonderBBox) => !worldSafeBounds || (
+    box.minX >= worldSafeBounds.minX - 1 && box.maxX <= worldSafeBounds.maxX + 1 &&
+    box.minY >= worldSafeBounds.minY - 1 && box.maxY <= worldSafeBounds.maxY + 1);
+
+  for (const ann of ordered) {
+    const resolvedCloud = cloudById.get(ann.annotation_id)!;
+    const cloud = resolvedCloud.geometry;
+    const otherClouds = visibleClouds.filter(([id]) => id !== ann.annotation_id)
+      .map(([, item]) => item.geometry.outerBounds);
+    const occupied = [
+      ...strokeBoxes, ...wordBoxes, ...otherClouds, ...placedNotes, ...teachingBoxes,
+      ...uiOverlayBlockers, ...(activeWritingBox ? [activeWritingBox] : []),
+    ];
 
     if (ann.visual_style.shape === 'chalk_tick') {
+      const tickLabel = ann.suggested_correction || '잘했어요!';
+      const noteVisible = fitsViewport(ann.note_geometry) &&
+        !occupied.some((box) => boxesIntersect(ann.note_geometry, box, 2));
       layoutMap[ann.annotation_id] = {
         noteBox: ann.note_geometry,
         placement: ann.placement_preference,
-        arrow: ann.arrow_path,
+        arrow: hiddenAnnotationArrow(ann.note_geometry),
         cloud,
+        cloudVisible: false,
+        noteVisible,
         headerFontSize: 20,
         explFontSize: 16,
         explLineHeight: 24,
         explGapTop: 24,
-        headerMetrics: wrapMixedLanguageRuns('잘했어요!', 'correction', 20, 200, 1.35, measureFontRunOnWeb, 1),
+        headerMetrics: wrapMixedLanguageRuns(tickLabel, 'correction', 20, 200, 1.35, measureFontRunOnWeb, 1),
         explMetrics: { lines: [], maxWidth: 0, totalHeight: 0, lineHeight: 24 },
         textBaseX: ann.note_geometry.minX + 6,
         textBaseY: ann.note_geometry.minY + 22,
       };
-      placedNotes.push(ann.note_geometry);
+      if (noteVisible) placedNotes.push(ann.note_geometry);
       continue;
     }
 
@@ -531,16 +621,29 @@ function buildResolvedAnnotationLayouts(
         : ann.suggested_correction || ann.target_text;
 
     const headerFontSize = typo.correctionWorldPx;
-    const explFontSize = typo.explanationWorldPx;
-    const explLineHeight = typo.explLineHeightWorldPx;
-    const explGapTop = typo.explGapTopWorldPx;
+    const isHighZoomConstrained = Boolean(worldSafeBounds && exactScale >= 1.45);
+    const explFontSize = isHighZoomConstrained
+      ? Math.min(typo.explanationWorldPx, Math.max(13, Math.round(25 / exactScale)))
+      : typo.explanationWorldPx;
+    const explLineRatio = isHighZoomConstrained ? 1.3 : typo.lineHeightRatio;
+    const explLineHeight = isHighZoomConstrained
+      ? Math.max(17, Math.round(explFontSize * explLineRatio))
+      : typo.explLineHeightWorldPx;
+    const explGapTop = isHighZoomConstrained
+      ? Math.min(typo.explGapTopWorldPx, 12)
+      : typo.explGapTopWorldPx;
 
+    const availSafeW = worldSafeBounds
+      ? Math.max(220, worldSafeBounds.maxX - worldSafeBounds.minX - 20)
+      : 0;
     const headerWrapWidth = isNarrowPhone
       ? Math.max(200, (viewportWidth - 36) / vScale)
       : Math.max(typo.maxLineWidthWorldPx + 40, 320);
     const explWrapWidth = isNarrowPhone
       ? Math.min(typo.maxLineWidthWorldPx, Math.max(200, (viewportWidth - 40) / vScale))
-      : typo.maxLineWidthWorldPx;
+      : isHighZoomConstrained
+        ? Math.min(Math.max(typo.maxLineWidthWorldPx, 460), availSafeW)
+        : typo.maxLineWidthWorldPx;
 
     const headerMetrics = wrapMixedLanguageRuns(
       corrLabel,
@@ -551,62 +654,94 @@ function buildResolvedAnnotationLayouts(
       measureFontRunOnWeb,
       2
     );
-    const explMetrics = wrapMixedLanguageRuns(
-      ann.explanation,
-      'explanation',
-      explFontSize,
-      explWrapWidth,
-      typo.lineHeightRatio,
-      measureFontRunOnWeb,
-      8
-    );
+    const measureAndPlaceForWrapWidth = (candWrapWidth: number) => {
+      const candExplMetrics = wrapMixedLanguageRuns(
+        ann.explanation,
+        'explanation',
+        explFontSize,
+        candWrapWidth,
+        explLineRatio,
+        measureFontRunOnWeb,
+        8
+      );
+      const rawW = Math.max(
+        200,
+        Math.ceil(Math.max(headerMetrics.maxWidth, candExplMetrics.maxWidth) + 20)
+      );
+      const mWidth = Math.max(isNarrowPhone ? 200 : 210, rawW);
+      // Use the same baselines as the overlay and PNG exporter, including the
+      // final descenders so the routing registry covers the rendered text.
+      const headerLineStep = Math.round(headerFontSize * 1.32);
+      const headerLineCount = Math.max(1, headerMetrics.lines.length);
+      const firstBaseline = Math.round(headerFontSize * 1.08);
+      const headerBottom = firstBaseline + (headerLineCount - 1) * headerLineStep + headerFontSize * 0.32;
+      const explBottom = candExplMetrics.lines.length > 0
+        ? firstBaseline + headerLineCount * headerLineStep - Math.round(headerFontSize * 0.45) +
+          explGapTop + (candExplMetrics.lines.length - 1) * explLineHeight + explFontSize * 0.36
+        : 0;
+      const mHeight = Math.max(64, Math.ceil(Math.max(headerBottom, explBottom) + 8));
+      const candPlaced = computeCollisionFreePlacement({
+        targetBox: ann.target_geometry,
+        desiredWidth: mWidth,
+        desiredHeight: mHeight,
+        preferredOrder: isNarrowPhone
+          ? ['below', 'above', 'right', 'left']
+          : [ann.placement_preference, 'below', 'right', 'above', 'left'],
+        occupiedBoxes: occupied,
+        activeWritingBox,
+        safeGap: typo.safeGapWorldPx,
+        maxWorldRight: isNarrowPhone
+          ? Math.max((viewportWidth - 12) / vScale, ann.target_geometry.maxX + 40)
+          : Math.max(1080, ann.target_geometry.maxX + mWidth + 140),
+        worldSafeBounds,
+        uiOverlayBlockers,
+        cloudSeed: ann.cloud_seed ?? 1,
+        resolvedCloud: cloud,
+      });
+      let inkOverlapScore = 0;
+      for (const sb of occupied) {
+        const ox = Math.max(
+          0,
+          Math.min(candPlaced.noteBox.maxX, sb.maxX) - Math.max(candPlaced.noteBox.minX, sb.minX)
+        );
+        const oy = Math.max(
+          0,
+          Math.min(candPlaced.noteBox.maxY, sb.maxY) - Math.max(candPlaced.noteBox.minY, sb.minY)
+        );
+        inkOverlapScore += ox * oy;
+      }
+      return {
+        explMetrics: candExplMetrics,
+        placed: candPlaced,
+        inkOverlapScore,
+      };
+    };
 
-    const rawMeasuredWidth = Math.max(
-      200,
-      Math.ceil(Math.max(headerMetrics.maxWidth, explMetrics.maxWidth) + 20)
-    );
-    const measuredWidth = isNarrowPhone
-      ? Math.min(rawMeasuredWidth, Math.max(200, (viewportWidth - 24) / vScale))
-      : Math.max(210, rawMeasuredWidth);
-    const headerBlockH = Math.max(headerFontSize * 1.32, headerMetrics.totalHeight);
-    const measuredHeight = Math.max(
-      Math.round(headerBlockH + (explMetrics.lines.length > 0 ? explMetrics.totalHeight + 22 : 12)),
-      64
-    );
+    let chosen = measureAndPlaceForWrapWidth(explWrapWidth);
+    const widerFallbackWidth = Math.min(580, availSafeW > 0 ? availSafeW : 560);
+    if (chosen.inkOverlapScore > 0 && !isNarrowPhone && widerFallbackWidth > explWrapWidth + 40) {
+      const widerCandidate = measureAndPlaceForWrapWidth(widerFallbackWidth);
+      if (widerCandidate.inkOverlapScore < chosen.inkOverlapScore) {
+        chosen = widerCandidate;
+      }
+    }
 
-    const otherClouds = placedClouds.filter((_, idx) => idx !== i);
-    const occupied = [
-      ...strokeBoxes,
-      ...otherClouds,
-      ...placedNotes,
-      ...teachingBoxes,
-    ];
+    const { explMetrics, placed } = chosen;
 
-    const placed = computeCollisionFreePlacement({
-      targetBox: ann.target_geometry,
-      desiredWidth: measuredWidth,
-      desiredHeight: measuredHeight,
-      preferredOrder: isNarrowPhone
-        ? ['below', 'above', 'right', 'left']
-        : [ann.placement_preference, 'below', 'right', 'above', 'left'],
-      occupiedBoxes: occupied,
-      activeWritingBox,
-      safeGap: typo.safeGapWorldPx,
-      maxWorldRight: isNarrowPhone
-        ? Math.max((viewportWidth - 12) / vScale, ann.target_geometry.maxX + 40)
-        : Math.max(1080, ann.target_geometry.maxX + measuredWidth + 140),
-      cloudSeed: ann.cloud_seed ?? 1,
-    });
-
-    placedNotes.push(placed.noteBox);
+    const noteVisible = fitsViewport(placed.noteBox) &&
+      !occupied.some((box) => boxesIntersect(placed.noteBox, box, 2)) &&
+      (!resolvedCloud.visible || !boxesIntersect(placed.noteBox, cloud.outerBounds, 2));
+    if (noteVisible) placedNotes.push(placed.noteBox);
     const textBaseX = placed.noteBox.minX + 8;
     const textBaseY = placed.noteBox.minY + Math.round(headerFontSize * 1.08);
 
     layoutMap[ann.annotation_id] = {
       noteBox: placed.noteBox,
       placement: placed.placement,
-      arrow: placed.arrow,
+      arrow: hiddenAnnotationArrow(placed.noteBox),
       cloud,
+      cloudVisible: resolvedCloud.visible,
+      noteVisible,
       headerFontSize,
       explFontSize,
       explLineHeight,
@@ -618,6 +753,24 @@ function buildResolvedAnnotationLayouts(
     };
   }
 
+  const existingRoutes: WonderAnnotation['arrow_path'][] = [];
+  for (const ann of ordered) {
+    const layout = layoutMap[ann.annotation_id];
+    if (!layout.cloudVisible || !layout.noteVisible) continue;
+    const obstacles = [
+      ...strokeBoxes, ...wordBoxes, ...teachingBoxes, ...uiOverlayBlockers, ...placedNotes,
+      ...visibleClouds.filter(([id]) => id !== ann.annotation_id).map(([, item]) => item.geometry.outerBounds),
+      ...(activeWritingBox ? [activeWritingBox] : []),
+    ];
+    const arrow = routeAnnotationArrow({
+      targetBox: ann.target_geometry, cloud: layout.cloud, noteBox: layout.noteBox,
+      placement: layout.placement, safeBounds: worldSafeBounds, existingRoutes, obstacles,
+      maxLength: Math.min(150, 160 / exactScale),
+    });
+    if (!arrow) continue;
+    layout.arrow = arrow;
+    existingRoutes.push(arrow);
+  }
   return layoutMap;
 }
 
@@ -649,13 +802,14 @@ function buildAnnotationFromServerAction(params: {
     idPrefix,
     seedIndex,
   } = params;
-  const isPraise = action.type === 'DRAW_CHECKMARK';
-  const isExample = action.type === 'WRITE_EXAMPLE';
+  const isPraise = action.type === 'DRAW_CHECKMARK' || action.type === 'PRAISE';
+  const isExample = action.type === 'WRITE_EXAMPLE' || action.type === 'CREATE_EXAMPLE';
   const isCorrection =
     !isPraise &&
     !isExample &&
-    Boolean(action.suggestedCorrection) &&
-    action.suggestedCorrection !== action.targetText;
+    (action.type === 'MARK_GRAMMAR_ERROR' ||
+      action.type === 'WRITE_CORRECTION' ||
+      (Boolean(action.suggestedCorrection) && action.suggestedCorrection !== action.targetText));
   const placement = computeCollisionFreePlacement({
     targetBox,
     desiredWidth: 320,
@@ -695,11 +849,17 @@ function buildAnnotationFromServerAction(params: {
     linguistic_category: isCorrection || isPraise ? 'naturalness' : 'vocabulary',
     severity: isPraise ? 'praise' : isCorrection ? 'error' : 'info',
     confidence: 0.9,
-    suggested_correction: action.suggestedCorrection || action.targetText,
+    suggested_correction:
+      action.suggestedCorrection ||
+      (isPraise
+        ? /[\uAC00-\uD7A3]/.test(recognizedText)
+          ? '잘했어요!'
+          : 'Great job!'
+        : action.targetText),
     explanation: action.explanation,
     hint: action.hint,
     visual_style: {
-      shape: 'scalloped_cloud',
+      shape: isPraise ? 'chalk_tick' : 'scalloped_cloud',
       accentColor,
     },
     placement_preference: placement.placement,
@@ -824,6 +984,7 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
       if (!activeIds.has(id)) {
         delete nextMap[id];
         delete timingsRef.current[id];
+        delete pauseAccRef.current[id];
         changed = true;
       }
     }
@@ -1109,11 +1270,12 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
             };
 
             const layout = resolvedLayoutByAnnId[ann.annotation_id];
-            const cloudGeo = layout?.cloud;
+            const cloudGeo = layout?.cloudVisible ? layout.cloud : undefined;
+            const noteVisible = Boolean(layout?.noteVisible);
             const cloudSlice = cloudGeo
               ? sliceCloudPathAtProgress(cloudGeo, anim.cloud)
               : { pathData: '', headX: 0, headY: 0, headAngle: 0, isClosed: false };
-            const resolvedArrow = layout?.arrow ?? ann.arrow_path;
+            const resolvedArrow = layout?.arrow ?? hiddenAnnotationArrow(ann.note_geometry);
             const arrowSlice = sliceArrowPathAtProgress(resolvedArrow, anim.arrow);
             const accent = ann.visual_style.accentColor;
 
@@ -1139,11 +1301,11 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
             const explGapTop = layout?.explGapTop ?? 32;
 
             const fullHeaderLines = layout?.headerMetrics.lines.map((l) => l.text) ?? [corrLabel];
-            const visibleHeaderLines = visibleCorr
+            const visibleHeaderLines = noteVisible && visibleCorr
               ? sliceWrappedLinesByVisibleText(fullHeaderLines, visibleCorr)
               : [];
 
-            const visibleExpl = sliceMixedLanguageReveal(ann.explanation, anim.explanation, true);
+            const visibleExpl = noteVisible ? sliceMixedLanguageReveal(ann.explanation, anim.explanation, true) : '';
             const fullExplLines =
               layout?.explMetrics.lines.map((l) => l.text) ?? wrapChalkText(ann.explanation, 28);
             const explLines = visibleExpl
@@ -1152,8 +1314,8 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
 
             const showCursor =
               board.chalkCursorEnabled &&
-              ((anim.cloud > 0.01 && anim.cloud < 0.999) ||
-                (anim.arrow > 0.01 && anim.arrow < 0.999));
+              ((cloudSlice.pathData.length > 0 && anim.cloud > 0.01 && anim.cloud < 0.999) ||
+                (arrowSlice.shaftPath.length > 0 && anim.arrow > 0.01 && anim.arrow < 0.999));
             const cursorX = anim.cloud < 0.999 ? cloudSlice.headX : arrowSlice.headX;
             const cursorY = anim.cloud < 0.999 ? cloudSlice.headY : arrowSlice.headY;
             const cursorDeg =
@@ -1164,6 +1326,44 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
             const textBaseY =
               layout?.textBaseY ?? ann.note_geometry.minY + Math.round(headerFontSize * 1.08);
 
+            // Optional Riddle-inspired Zhang-Suen skeleton handwriting synthesis for short chalk headers
+            // Automatically falls back to grapheme reveal whenever disabled, too dense, or fragmented
+            let synthStrokesToDraw: Array<Array<{ x: number; y: number }>> | null = null;
+            if (
+              noteVisible && board.handwritingSynthesisEnabled &&
+              anim.correction > 0 &&
+              anim.correction < 0.999 &&
+              corrLabel.length <= 24
+            ) {
+              const mask = rasterizeTextToBinaryMask(corrLabel, Math.max(20, Math.round(headerFontSize)));
+              if (mask) {
+                const synth = synthesizeHandwritingFromMask(
+                  mask,
+                  {
+                    minX: textBaseX,
+                    minY: textBaseY - headerFontSize,
+                    maxX: textBaseX + Math.min(260, mask.width * 0.9),
+                    maxY: textBaseY + Math.round(headerFontSize * 0.35),
+                    width: Math.min(260, mask.width * 0.9),
+                    height: Math.round(headerFontSize * 1.35),
+                  },
+                  corrLabel
+                );
+                if (!synth.fallbackToGraphemeReveal && synth.strokes.length > 0) {
+                  const totalPts = synth.strokes.reduce((acc, s) => acc + s.points.length, 0);
+                  let budget = Math.max(1, Math.round(totalPts * anim.correction));
+                  const partial: Array<Array<{ x: number; y: number }>> = [];
+                  for (const st of synth.strokes) {
+                    if (budget <= 0) break;
+                    const take = Math.min(st.points.length, budget);
+                    if (take >= 2) partial.push(st.points.slice(0, take));
+                    budget -= take;
+                  }
+                  if (partial.length > 0) synthStrokesToDraw = partial;
+                }
+              }
+            }
+
             const handleAnnClick = () => {
               if (!anim.completed && !override) {
                 skipAnnotationAnim(ann.annotation_id);
@@ -1173,6 +1373,8 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
             };
 
             if (ann.visual_style.shape === 'chalk_tick') {
+              if (!noteVisible) return null;
+              const tickLabel = ann.suggested_correction || '잘했어요!';
               return React.createElement(
                 'g',
                 {
@@ -1201,7 +1403,7 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
                     fontWeight: '700',
                     fontFamily: FONT_CHALK,
                   },
-                  renderRunTspans('잘했어요!', 'correction', 20)
+                  renderRunTspans(tickLabel, 'correction', 20)
                 )
               );
             }
@@ -1266,7 +1468,23 @@ const WonderAiChalkOverlay = React.memo(function WonderAiChalkOverlay({
                 strokeLinejoin: 'round',
               }),
               // Direct-on-canvas language-aware correction lines with normalized <tspan> font runs
-              visibleHeaderLines.map((hLine, hIdx) =>
+              // When optional Riddle skeleton synthesis is active mid-reveal, draw progressive skeleton strokes
+              synthStrokesToDraw
+                ? synthStrokesToDraw.map((pts, sIdx) =>
+                    React.createElement('path', {
+                      key: `synth_${sIdx}`,
+                      'data-testid': sIdx === 0 ? `chalk-synth-${ann.annotation_id}` : undefined,
+                      d: pts
+                        .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+                        .join(' '),
+                      fill: 'none',
+                      stroke: accent,
+                      strokeWidth: 2.1,
+                      strokeLinecap: 'round',
+                      strokeLinejoin: 'round',
+                    })
+                  )
+                : visibleHeaderLines.map((hLine, hIdx) =>
                 React.createElement(
                   'text',
                   {
@@ -1523,6 +1741,7 @@ export function WonderBoardScreen({
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
+  const [showDeferredNotes, setShowDeferredNotes] = useState(false);
   const [showSpecimensDrawer, setShowSpecimensDrawer] = useState(false);
   const [showTypedComposer, setShowTypedComposer] = useState(false);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
@@ -1531,8 +1750,7 @@ export function WonderBoardScreen({
   const [boardDraftText, setBoardDraftText] = useState('');
   const [confirmTextDraft, setConfirmTextDraft] = useState('');
   const [showConfirmInput, setShowConfirmInput] = useState(false);
-  const [ambiguousConfirmDraft, setAmbiguousConfirmDraft] = useState('');
-  const [dismissedAmbiguousRegionId, setDismissedAmbiguousRegionId] = useState<string | null>(null);
+  const [showDevCropPreview, setShowDevCropPreview] = useState(false);
   const [serverHealth, setServerHealth] = useState<WonderServerHealth | null>(null);
   const serverHealthRef = useRef<WonderServerHealth | null>(null);
   serverHealthRef.current = serverHealth;
@@ -1603,20 +1821,13 @@ export function WonderBoardScreen({
     return 'Cloud AI';
   }, [serverHealth]);
 
-  const latestAmbiguousRegion = useMemo(() => {
-    const candidates = board.regions.filter(
-      (r) =>
-        r.provenance === 'freehand_ink' &&
-        (r.recognitionStatus === 'AMBIGUOUS' || r.recognitionStatus === 'PROVIDER_UNAVAILABLE') &&
-        r.regionId !== dismissedAmbiguousRegionId
-    );
-    return candidates.length > 0 ? candidates[candidates.length - 1] : null;
-  }, [board.regions, dismissedAmbiguousRegionId]);
-
   const activeAnnotationsForLayout = useMemo(
     () => board.annotations.filter((a) => a.status === 'active'),
     [board.annotations]
   );
+
+  const isPhoneLayout = winWidth < 680;
+  const activeSidebarWidth = !isPhoneLayout && !sidebarCollapsed ? 220 : 0;
 
   const resolvedLayoutByAnnId = useMemo(
     () =>
@@ -1624,17 +1835,26 @@ export function WonderBoardScreen({
         board,
         activeAnnotationsForLayout,
         activeWritingBox,
-        winWidth
+        winWidth,
+        winHeight,
+        activeSidebarWidth,
+        toolbarCollapsed
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       activeAnnotationsForLayout,
       activeWritingBox,
+      activeSidebarWidth,
       board.regions,
+      board.hangulDemos,
       board.strokes,
       board.teachingCards,
+      board.viewport.offsetX,
+      board.viewport.offsetY,
       board.viewport.scale,
       fontEpoch,
+      toolbarCollapsed,
+      winHeight,
       winWidth,
     ]
   );
@@ -1651,6 +1871,8 @@ export function WonderBoardScreen({
   );
   const rafHandleRef = useRef<number | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recentStrokeTimesRef = useRef<number[]>([]);
+  const writingCadenceMsRef = useRef<number>(650);
   const analysisAbortRef = useRef<AbortController | null>(null);
   const visionCacheRef = useRef<WonderRecognitionCache>(new WonderRecognitionCache(64));
   const privacyRef = useRef<WonderPrivacyConfig>(privacy);
@@ -1819,6 +2041,10 @@ export function WonderBoardScreen({
 
   // Living AI Continuous Recognition, Context Modeling, Reconciliation & Tutor Orchestrator V3
   const runAmbientAnalysis = async (targetRevision: number, forceReview = false) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
     const snapBoard = latestBoardRef.current;
     if (!snapBoard.aiEnabled || (snapBoard.aiMode === 'focus' && !forceReview)) {
       setTeacherState('IDLE');
@@ -1839,25 +2065,43 @@ export function WonderBoardScreen({
       const priv = privacyRef.current;
       const apiCfg = loadAiApiConfig();
       const resolvedProv = resolveProvider(apiCfg);
+      const serverVisionReady = Boolean(serverHealthRef.current?.visionReady);
+      const hasGateway = Boolean(priv.gatewayUrl.trim());
+      const devDirectProv = resolvedProv ?? 'auto';
       const visionProvider = createBrowserVisionProvider({
         allowCloudAi: priv.allowCloudAi,
         gatewayUrl: priv.gatewayUrl,
         gatewayToken: priv.gatewayToken,
-        sameOriginVisionReady: Boolean(serverHealthRef.current?.visionReady),
+        sameOriginVisionReady: serverVisionReady,
         devDirectApiKey: apiCfg.apiKey,
-        devDirectProvider:
-          resolvedProv === 'gemini' || resolvedProv === 'openai' ? resolvedProv : 'auto',
+        devDirectProvider: devDirectProv,
       });
+
+      const noProviderReason =
+        !serverVisionReady && !hasGateway
+          ? !apiCfg.apiKey.trim()
+            ? 'NO_VISION_CREDENTIALS'
+            : !priv.allowCloudAi
+              ? 'CLOUD_CONSENT_DISABLED'
+              : undefined
+          : undefined;
 
       const perception = await recognizeWithHybridPipeline({
         strokes: snapBoard.strokes,
         boardId: snapBoard.id,
         revision: snapBoard.revision,
         visionProvider,
-        cropRenderer: renderRegionInkCropDataUrl,
+        cropRenderer: renderObservationWindowSnapshot,
         cache: visionCacheRef.current,
         existingRegions: snapBoard.regions,
+        visionFirst: true,
         signal: ac?.signal,
+        forceRecognition: forceReview,
+        bypassCache: forceReview,
+        maxSubRegionBudget: 2,
+        cloudConsentGranted: priv.allowCloudAi || serverVisionReady || hasGateway,
+        noProviderReason,
+        targetLanguage: snapBoard.targetLanguage ?? 'auto',
       });
 
       const regions = perception.regions;
@@ -1870,7 +2114,11 @@ export function WonderBoardScreen({
 
       const dirty = computeDirtyRegions(snapBoard.regions, regions);
       const hasInProgress = regions.some((r) => r.completeness === 'in_progress');
-      if (hasInProgress && regions.every((r) => r.completeness !== 'complete')) {
+      if (
+        !forceReview &&
+        hasInProgress &&
+        regions.every((r) => r.completeness === 'in_progress')
+      ) {
         updateActiveBoard((b) => ({
           ...b,
           regions,
@@ -1931,6 +2179,8 @@ export function WonderBoardScreen({
         existingTeachingCards: effectiveBoard.teachingCards,
         learnerProfile: aiProfile,
         recordedEventKeys: new Set(effectiveBoard.recordedEventKeys ?? []),
+        previousTree: effectiveBoard.semanticTree,
+        writingCadenceMs: writingCadenceMsRef.current,
       });
 
       const aiLatency = Math.max(1, Date.now() - tAiStart);
@@ -1943,19 +2193,33 @@ export function WonderBoardScreen({
       // unless deterministic SLA engine already raised a concrete error, teaching card, or demo.
       let serverAnnotationsToAdd: WonderAnnotation[] = [];
       let serverTutorCalled = false;
-      const recognizedRegionsForServer = regions.filter(
-        (r) =>
-          (r.recognitionStatus === 'RECOGNIZED' || r.recognitionStatus === 'PARTIALLY_RECOGNIZED') &&
-          r.recognizedText.trim().length > 0 &&
-          r.completeness === 'complete'
-      );
-      const localErrorStrokeIds = new Set(
+      const recognizedRegionsForServer = regions.filter((r) => {
+        if (tutorRes.practiceByRegionId[r.regionId]) return false;
+        if (
+          !(r.recognitionStatus === 'RECOGNIZED' || r.recognitionStatus === 'PARTIALLY_RECOGNIZED') ||
+          r.recognizedText.trim().length === 0 ||
+          r.completeness !== 'complete'
+        ) {
+          return false;
+        }
+        const sentNode = tutorRes.semanticTree.nodes.find((n) => n.id === `sent_${r.regionId}`);
+        if (sentNode && selectInterventionGranularity(sentNode, effectiveBoard) === 'SILENT_OBSERVE') {
+          return false;
+        }
+        return true;
+      });
+      const localHandledStrokeIds = new Set(
         [...reconciled.filter((a) => a.status === 'active'), ...tutorRes.annotationsToAdd]
-          .filter((a) => a.severity === 'error' || a.annotation_id.startsWith('srv_'))
+          .filter(
+            (a) =>
+              a.severity === 'error' ||
+              a.severity === 'praise' ||
+              a.annotation_id.startsWith('srv_')
+          )
           .flatMap((a) => a.source_stroke_ids)
       );
       const regionsNeedingServerTutor = recognizedRegionsForServer.filter((r) => {
-        const alreadyCovered = r.strokeIds.some((id) => localErrorStrokeIds.has(id));
+        const alreadyCovered = r.strokeIds.some((id) => localHandledStrokeIds.has(id));
         if (alreadyCovered) return false;
         const coveredByTeachingCard =
           !forceReview &&
@@ -1974,7 +2238,11 @@ export function WonderBoardScreen({
             language: r.language,
           })),
           guidanceLevel: effectiveBoard.guidanceLevel ?? 'guided',
+          targetLanguage: effectiveBoard.targetLanguage ?? 'auto',
           intent: forceReview ? 'grammar_check' : 'ambient',
+          revision: targetRevision,
+          conversationMemory: effectiveBoard.conversationMemory ?? [],
+          stream: true,
           gatewayUrl: priv.gatewayUrl,
           gatewayToken: priv.gatewayToken,
           signal: ac?.signal,
@@ -1989,23 +2257,19 @@ export function WonderBoardScreen({
         serverAnnotationsToAdd = serverTutor.actions
           .filter(
             (act) =>
-              (act.type === 'DRAW_CLOUD' ||
-                act.type === 'WRITE_EXPLANATION' ||
-                act.type === 'WRITE_EXAMPLE' ||
-                act.type === 'DRAW_CHECKMARK') &&
+              act.type !== 'WAIT' &&
+              act.type !== 'RETRACT_ANNOTATION' &&
               act.targetText.length > 0 &&
-              act.explanation.length > 0
+              (act.explanation.length > 0 || act.hint.length > 0 || act.suggestedCorrection.length > 0)
           )
           .slice(0, 6)
           .flatMap((act, idx) => {
-            const matchedRegion =
-              regionsNeedingServerTutor.find((r) => r.regionId === act.regionId) ??
-              regionsNeedingServerTutor.find((r) => r.recognizedText.includes(act.targetText)) ??
-              regionsNeedingServerTutor[0];
+            const matchedRegion = regionsNeedingServerTutor.find(
+              (r) => r.regionId === act.regionId && r.recognizedText.includes(act.targetText));
             if (!matchedRegion) return [];
-            const matchedSpan =
-              matchedRegion.spans.find((sp) => sp.text.includes(act.targetText)) ??
-              matchedRegion.spans[0];
+            const matchingSpans = matchedRegion.spans.filter((sp) => sp.text.includes(act.targetText));
+            if (matchingSpans.length !== 1 && matchedRegion.recognizedText !== act.targetText) return [];
+            const matchedSpan = matchingSpans.length === 1 ? matchingSpans[0] : undefined;
             const targetBox = matchedSpan?.bbox ?? matchedRegion.bbox;
             const targetStrokeIds =
               matchedSpan?.strokeIds && matchedSpan.strokeIds.length > 0
@@ -2034,17 +2298,58 @@ export function WonderBoardScreen({
         onRecordLearningEvents(tutorRes.newEvents);
       }
 
+      setRecognitionDiagnostics(
+        perception.diagnostics.map((d) => {
+          const activity = tutorRes.practiceByRegionId[d.regionId];
+          const matchingAnns = [...reconciled, ...tutorRes.annotationsToAdd, ...serverAnnotationsToAdd].filter((a) =>
+            a.status === 'active' && !tutorRes.retractedAnnotationIds.includes(a.annotation_id) &&
+            !tutorRes.resolvedAnnotationIds.includes(a.annotation_id) &&
+            (d.sourceStrokeIds?.some((sid) => a.source_stroke_ids.includes(sid)) ||
+              (activity && a.teaching_activity_id === activity.activityId &&
+                a.severity === 'info' && a.learning_concept_ids.includes(activity.conceptId ?? '')))
+          );
+          const decision =
+            matchingAnns.length > 0
+              ? matchingAnns.map((a) => `${a.granularity ?? 'AUTO'}:${a.target_text}`).join(', ')
+              : d.recognitionStatus === 'RECOGNIZED'
+                ? 'OBSERVE_OR_VALID'
+                : 'DEFERRED_AMBIGUOUS';
+          return {
+            ...d,
+            annotationDecision: activity?.suppressedReason ?? decision,
+            learningIntent: tutorRes.intentsByRegionId[d.regionId]?.[0]?.intent,
+            teachingActivityId: activity?.activityId,
+            conceptIds: [...new Set([...(activity?.conceptId ? [activity.conceptId] : []),
+              ...matchingAnns.flatMap((a) => a.learning_concept_ids)])],
+            annotationIds: [...new Set(matchingAnns.map((a) => a.annotation_id))],
+            suppressedFeedbackReason: activity?.suppressedReason ??
+              (d.recognitionStatus !== 'RECOGNIZED' ? 'DEFERRED_AMBIGUOUS' : undefined),
+          };
+        })
+      );
+
       updateActiveBoard((b) => {
         const resolvedSet = new Set(tutorRes.resolvedAnnotationIds);
+        const retractedSet = new Set(tutorRes.retractedAnnotationIds);
         const mergedAnnotations = reconcileAnnotationsWithStrokes(
           b.annotations,
           b.strokes,
           regions
-        ).map((a) =>
-          resolvedSet.has(a.annotation_id)
-            ? { ...a, status: 'resolved' as const, reconciliation_action: 'RESOLVED' as const }
-            : a
-        );
+        ).map((a) => {
+          if (resolvedSet.has(a.annotation_id)) {
+            return { ...a, status: 'resolved' as const, reconciliation_action: 'RESOLVED' as const };
+          }
+          if (retractedSet.has(a.annotation_id) && a.status === 'active') {
+            return {
+              ...a,
+              status: 'stale' as const,
+              lifecycle_state: 'cancelled' as const,
+              reconciliation_action: 'SUPERSEDED' as const,
+              retracted_reason: 'Superseded by higher-level semantic node',
+            };
+          }
+          return a;
+        });
         const existingKeys = new Set(
           mergedAnnotations
             .filter((a) => a.status === 'active' || a.status === 'dismissed')
@@ -2062,6 +2367,22 @@ export function WonderBoardScreen({
         const uniqueNew = [...filteredLocalAdds, ...serverAnnotationsToAdd].filter(
           (a) => !existingKeys.has(a.stable_key)
         );
+        let nextMemory = b.conversationMemory ?? [];
+        for (const newAnn of uniqueNew.slice(0, 4)) {
+          const regLang =
+            regions.find((r) => r.strokeIds.some((sid) => newAnn.source_stroke_ids.includes(sid)))
+              ?.language ?? 'unknown';
+          nextMemory = appendConversationMemoryTurn(nextMemory, {
+            turnId: newAnn.annotation_id,
+            revision: targetRevision,
+            timestamp: Date.now(),
+            regionId: newAnn.parent_node_id ?? '',
+            userText: newAnn.recognized_text.slice(0, 240),
+            aiSummary: (newAnn.suggested_correction || newAnn.explanation).slice(0, 240),
+            actionType: newAnn.annotation_type,
+            language: regLang,
+          });
+        }
         const recordedKeys = Array.from(
           new Set([
             ...(b.recordedEventKeys ?? []),
@@ -2073,7 +2394,9 @@ export function WonderBoardScreen({
           ...b,
           regions,
           boardContext,
+          semanticTree: tutorRes.semanticTree,
           beginnerLoop: tutorRes.nextBeginnerLoop,
+          conversationMemory: nextMemory,
           teacherState:
             uniqueNew.length > 0 ? 'PLANNING_FEEDBACK' : tutorRes.recommendedTeacherState,
           annotations: deduplicateWonderAnnotations([...mergedAnnotations, ...uniqueNew]),
@@ -2255,6 +2578,7 @@ export function WonderBoardScreen({
       createdAt: Date.now(),
       provenance: 'freehand_ink',
     };
+    if (strokeTool !== 'eraser_pixel') setActiveWritingBox(activeStrokeRef.current.bbox);
     scheduleRender();
   };
 
@@ -2350,7 +2674,7 @@ export function WonderBoardScreen({
       active.width,
       active.tool
     );
-    setActiveWritingBox(active.bbox);
+    if (active.tool !== 'eraser_pixel') setActiveWritingBox(active.bbox);
     scheduleRender();
   };
 
@@ -2385,6 +2709,16 @@ export function WonderBoardScreen({
       bbox: computeStrokeBoundingBox(active.points, 0, 0, active.width, active.tool),
     };
 
+    const strokeEndNow = Date.now();
+    recentStrokeTimesRef.current = [...recentStrokeTimesRef.current.slice(-14), strokeEndNow];
+    const strokesAfterCommit = [...latestBoardRef.current.strokes, finalized];
+    const adaptiveTiming = computeAdaptiveAnalysisDelayMs(
+      recentStrokeTimesRef.current,
+      strokesAfterCommit,
+      latestBoardRef.current.regions[latestBoardRef.current.regions.length - 1]
+    );
+    writingCadenceMsRef.current = adaptiveTiming.writingCadenceMs;
+
     updateActiveBoard((b) => {
       const nextStrokes = [...b.strokes, finalized];
       return {
@@ -2395,7 +2729,7 @@ export function WonderBoardScreen({
         annotations: reconcileAnnotationsWithStrokes(b.annotations, nextStrokes),
       };
     });
-    scheduleAmbientAi(nextRevision);
+    scheduleAmbientAi(nextRevision, adaptiveTiming.semanticDelayMs);
   };
 
   const handleWheelZoom = (ev: WebWheelEventLike) => {
@@ -2575,14 +2909,15 @@ export function WonderBoardScreen({
           ctx.strokeStyle = accent;
           ctx.globalAlpha = 0.95;
           ctx.lineWidth = cloudStrokeW;
-          ctx.stroke(new Path2DCtor(l.cloud.pathData));
+          if (l.cloudVisible) ctx.stroke(new Path2DCtor(l.cloud.pathData));
 
           const arrowPaths = sliceArrowPathAtProgress(l.arrow, 1);
           ctx.lineWidth = arrowStrokeW;
-          ctx.stroke(new Path2DCtor(arrowPaths.shaftPath));
-          ctx.stroke(new Path2DCtor(arrowPaths.headPath));
+          if (arrowPaths.shaftPath) ctx.stroke(new Path2DCtor(arrowPaths.shaftPath));
+          if (arrowPaths.headPath) ctx.stroke(new Path2DCtor(arrowPaths.headPath));
         }
 
+        if (!l.noteVisible) continue;
         ctx.globalAlpha = 1;
         l.headerMetrics.lines.forEach((hl, idx) => {
           drawMixedLine(
@@ -2666,7 +3001,9 @@ export function WonderBoardScreen({
         ? intent
         : null;
 
-    if (canCallServerTutor && serverIntent && fallbackRegs.length > 0 && selStrokes.length > 0) {
+    const localHangulExercise = intent === 'practice_exercise' && fallbackRegs.length === 1 &&
+      decomposeHangulUnit(fallbackRegs[0].recognizedText);
+    if (canCallServerTutor && serverIntent && !localHangulExercise && fallbackRegs.length > 0 && selStrokes.length > 0) {
       setTeacherState('ANALYZING');
       const serverTutor = await requestWonderServerTutor({
         regions: fallbackRegs.map((r) => ({
@@ -2679,11 +3016,19 @@ export function WonderBoardScreen({
         gatewayUrl: privacyRef.current.gatewayUrl,
         gatewayToken: privacyRef.current.gatewayToken,
       });
-      const act = serverTutor.actions.find(
-        (a) => a.type !== 'WAIT' && a.targetText.length > 0 && a.explanation.length > 0
-      );
-      if (act) {
-        const targetBox = mergeBoundingBoxes(selStrokes.map((s) => s.bbox));
+      const anchoredActions = serverTutor.actions.flatMap((act) => {
+        if (act.type === 'WAIT' || !act.targetText || !act.explanation) return [];
+        const matched = fallbackRegs.find((r) => r.regionId === act.regionId);
+        if (!matched || !matched.recognizedText.includes(act.targetText)) return [];
+        const spans = matched.spans.filter((item) => item.text.includes(act.targetText));
+        if (spans.length !== 1 && matched.recognizedText !== act.targetText) return [];
+        const targetIds = spans.length === 1 && spans[0].strokeIds.length ? spans[0].strokeIds : matched.strokeIds;
+        return targetIds.length && targetIds.every((id) => selSet.has(id)) ? [{ act, matched, targetIds }] : [];
+      });
+      const anchored = anchoredActions[0];
+      if (anchored) {
+        const { act, matched, targetIds } = anchored;
+        const targetBox = mergeBoundingBoxes(selStrokes.filter((stroke) => targetIds.includes(stroke.id)).map((s) => s.bbox));
         const occupiedBoxes = [
           ...snapBoard.strokes.filter((s) => !s.deleted).map((s) => s.bbox),
           ...filteredExisting.filter((a) => a.status === 'active').map((a) => a.note_geometry),
@@ -2694,10 +3039,10 @@ export function WonderBoardScreen({
           boardId: snapBoard.id,
           revision: snapBoard.revision,
           targetBox,
-          targetStrokeIds: selectedStrokeIds,
-          recognizedText: fallbackRegs.map((r) => r.recognizedText).join(' '),
-          startIndex: 0,
-          endIndex: act.targetText.length,
+          targetStrokeIds: targetIds,
+          recognizedText: matched.recognizedText,
+          startIndex: matched.recognizedText.indexOf(act.targetText),
+          endIndex: matched.recognizedText.indexOf(act.targetText) + act.targetText.length,
           occupiedBoxes,
           theme,
           idPrefix: `srv_gest_${intent}`,
@@ -2888,6 +3233,12 @@ export function WonderBoardScreen({
           viewport: { ...b.viewport, scale: Math.max(0.25, Math.min(2.6, scale)) },
         }));
       },
+      setTargetLanguage: (targetLanguage: WonderTargetLanguage) => {
+        updateActiveBoard((b) => ({
+          ...b,
+          targetLanguage,
+        }));
+      },
       clearBoard: handleClearBoard,
       insertSample: (text: string, mode?: WonderAiMode, startX = 70, startY?: number) => {
         handleInsertSampleFixture(text, mode, startX, startY, 'fixture_sample', true);
@@ -2979,7 +3330,7 @@ export function WonderBoardScreen({
       getAnimationTimings: () => overlayHelpersRef.current?.getAnimationTimings() ?? {},
       skipAnnotationAnim: (annId: string) => overlayHelpersRef.current?.skipAnnotationAnim(annId),
       getMeasuredLayouts: () => {
-        const res: Record<string, { noteBox: WonderBBox; arrow: WonderAnnotation['arrow_path']; headerFontSize: number; explFontSize: number; lines: string[]; cloudBounds: WonderBBox }> = {};
+        const res: Record<string, { noteBox: WonderBBox; arrow: WonderAnnotation['arrow_path']; headerFontSize: number; explFontSize: number; lines: string[]; cloudBounds: WonderBBox; noteVisible: boolean; cloudVisible: boolean }> = {};
         for (const [id, l] of Object.entries(resolvedLayoutByAnnId)) {
           res[id] = {
             noteBox: l.noteBox,
@@ -2991,6 +3342,8 @@ export function WonderBoardScreen({
               ...l.explMetrics.lines.map((x) => x.text),
             ],
             cloudBounds: l.cloud.outerBounds,
+            noteVisible: l.noteVisible,
+            cloudVisible: l.cloudVisible,
           };
         }
         return res;
@@ -3111,6 +3464,7 @@ export function WonderBoardScreen({
           gatewayToken,
         };
         privacyRef.current = next;
+        visionCacheRef.current = new WonderRecognitionCache();
         setPrivacy(next);
         saveWonderPrivacyConfig(next);
       },
@@ -3124,12 +3478,33 @@ export function WonderBoardScreen({
         updateActiveBoard((b) => ({ ...b, regions: nextRegs }));
         return true;
       },
+      getSemanticTree: () => latestBoardRef.current.semanticTree,
+      renderCropPreview: () => {
+        const active = latestBoardRef.current.strokes.filter(
+          (s) => !s.deleted && s.provenance !== 'ai_teaching' && s.tool !== 'eraser_pixel'
+        );
+        if (active.length === 0) return null;
+        const box = mergeBoundingBoxes(active.map((s) => s.bbox));
+        return renderObservationWindowSnapshot(active, box);
+      },
     };
   });
 
   const isPhone = winWidth < 680;
   const compactHeader = winWidth < 860;
   const activeCount = board.annotations.filter((a) => a.status === 'active').length;
+  const deferredNotes = board.showAnnotations
+    ? activeAnnotationsForLayout.filter((a) => !resolvedLayoutByAnnId[a.annotation_id]?.noteVisible)
+    : [];
+  const deferredNotesButton = deferredNotes.length > 0 && (
+    <Pressable
+      testID="wonder-deferred-notes"
+      style={[styles.pillBtn, isPhone && styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
+      onPress={() => setShowDeferredNotes((value) => !value)}
+    >
+      <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>Ghi chú ({deferredNotes.length})</Text>
+    </Pressable>
+  );
 
   return (
     <View style={[styles.root, { backgroundColor: theme.backgroundHex }]}>
@@ -3202,6 +3577,22 @@ export function WonderBoardScreen({
                 {activeCount > 0 ? ` (${activeCount})` : ''}
               </Text>
             </View>
+
+            {deferredNotesButton}
+            <Pressable
+              testID="wonder-lang-toggle"
+              style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() =>
+                updateActiveBoard((b) => ({
+                  ...b,
+                  targetLanguage: getNextTargetLanguage(b.targetLanguage),
+                }))
+              }
+            >
+              <Text style={[styles.pillBtnText, styles.pillBtnTextPhone, { color: theme.uiTextHex }]}>
+                {getTargetLangShortLabel(board.targetLanguage)}
+              </Text>
+            </Pressable>
 
             <Pressable
               style={[styles.pillBtn, styles.pillBtnPhone, { backgroundColor: theme.uiSurfaceHex }]}
@@ -3296,11 +3687,27 @@ export function WonderBoardScreen({
           </View>
 
           <View style={styles.topRight}>
+            {deferredNotesButton}
             <Pressable
               style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
               onPress={() => runAmbientAnalysis(latestBoardRef.current.revision, true)}
             >
               <Text style={[styles.pillBtnText, { color: theme.aiPositiveHex }]}>Chấm ngay</Text>
+            </Pressable>
+
+            <Pressable
+              testID="wonder-lang-toggle"
+              style={[styles.pillBtn, { backgroundColor: theme.uiSurfaceHex }]}
+              onPress={() =>
+                updateActiveBoard((b) => ({
+                  ...b,
+                  targetLanguage: getNextTargetLanguage(b.targetLanguage),
+                }))
+              }
+            >
+              <Text style={[styles.pillBtnText, { color: theme.uiTextHex }]}>
+                {getTargetLangShortLabel(board.targetLanguage)}
+              </Text>
             </Pressable>
 
             <Pressable
@@ -3612,35 +4019,57 @@ export function WonderBoardScreen({
               </Pressable>
             </View>
             <Text style={styles.popoverNote}>
-              Tạo nét vector Hangul chuẩn hóa trên Layer 2 để quan sát giáo viên AI khoanh đám mây từng nét:
+              Tạo nét vector Hàn / Anh / Việt chuẩn hóa trên Layer 2 để quan sát giáo viên AI khoanh đám mây từng nét:
             </Text>
-            {[
-              {
-                label: 'Kịch bản A: Thì quá khứ (저는 어제 학교에 가요.)',
-                text: '저는 어제 학교에 가요.',
-                mode: 'tutor' as WonderAiMode,
-              },
-              {
-                label: 'Kịch bản B: Trợ từ tân ngữ (저는 사과가 먹어요.)',
-                text: '저는 사과가 먹어요.',
-                mode: 'tutor' as WonderAiMode,
-              },
-              {
-                label: 'Địa điểm: 저는 학교에 공부해요. (→ 에서)',
-                text: '저는 학교에 공부해요.',
-                mode: 'tutor' as WonderAiMode,
-              },
-              {
-                label: 'Kịch bản C: Người mới viết tiếng Việt',
-                text: 'Tôi muốn học cách gọi cà phê.',
-                mode: 'discovery' as WonderAiMode,
-              },
-              {
-                label: 'Kịch bản E: Tự sửa đúng (갔어요)',
-                text: '저는 어제 학교에 갔어요.',
-                mode: 'tutor' as WonderAiMode,
-              },
-            ].map((spec) => (
+            {(() => {
+              const koSpecs: Array<{ label: string; text: string; mode: WonderAiMode }> = [
+                {
+                  label: 'Hàn A: Thì quá khứ (저는 어제 학교에 가요.)',
+                  text: '저는 어제 학교에 가요.',
+                  mode: 'tutor',
+                },
+                {
+                  label: 'Hàn B: Trợ từ tân ngữ (저는 사과가 먹어요.)',
+                  text: '저는 사과가 먹어요.',
+                  mode: 'tutor',
+                },
+                {
+                  label: 'Hàn C: Người mới viết tiếng Việt',
+                  text: 'Tôi muốn học cách gọi cà phê.',
+                  mode: 'discovery',
+                },
+                {
+                  label: 'Hàn D: Tự sửa đúng (갔어요)',
+                  text: '저는 어제 학교에 갔어요.',
+                  mode: 'tutor',
+                },
+              ];
+              const enSpecs: Array<{ label: string; text: string; mode: WonderAiMode }> = [
+                {
+                  label: 'Anh A: Thì quá khứ (I go to school yesterday.)',
+                  text: 'I go to school yesterday.',
+                  mode: 'tutor',
+                },
+                {
+                  label: 'Anh B: Mạo từ & S-V (She eat a apple every day.)',
+                  text: 'She eat a apple every day.',
+                  mode: 'tutor',
+                },
+                {
+                  label: 'Anh C: Lỗi Việt-Anh (I am agree and go to home.)',
+                  text: 'I am agree and go to home.',
+                  mode: 'tutor',
+                },
+                {
+                  label: 'Anh D: Câu tiếng Anh chuẩn (went yesterday)',
+                  text: 'I went to school yesterday.',
+                  mode: 'tutor',
+                },
+              ];
+              const orderedSpecs =
+                board.targetLanguage === 'en' ? [...enSpecs, ...koSpecs] : [...koSpecs, ...enSpecs];
+              return orderedSpecs;
+            })().map((spec) => (
               <Pressable
                 key={spec.label}
                 style={styles.specimenBtn}
@@ -3652,6 +4081,29 @@ export function WonderBoardScreen({
               </Pressable>
             ))}
           </View>
+        )}
+
+        {showDeferredNotes && deferredNotes.length > 0 && (
+          <ScrollView
+            style={[styles.settingsDrawer, isPhone && styles.settingsDrawerPhone, { backgroundColor: theme.uiSurfaceHex }]}
+            contentContainerStyle={{ gap: 10 }}
+          >
+            <View style={styles.popoverHeaderRow}>
+              <Text style={[styles.popoverTitle, { color: theme.uiTextHex }]}>Ghi chú trên bảng</Text>
+              <Pressable accessibilityLabel="Đóng ghi chú" onPress={() => setShowDeferredNotes(false)}>
+                <Text style={{ color: theme.uiTextHex, fontSize: 18 }}>×</Text>
+              </Pressable>
+            </View>
+            {deferredNotes.map((ann) => (
+              <View key={ann.annotation_id}>
+                <Text style={[styles.popoverTitle, { color: theme.uiTextHex }]}>{ann.target_text}</Text>
+                {ann.severity === 'error' && ann.suggested_correction && (
+                  <Text style={{ color: theme.uiTextHex }}>{ann.target_text} → {ann.suggested_correction}</Text>
+                )}
+                <Text style={{ color: theme.uiTextHex }}>{ann.explanation || ann.hint || ann.suggested_correction}</Text>
+              </View>
+            ))}
+          </ScrollView>
         )}
 
         {/* Settings Drawer: Theme, AI Mode, Chalk Speed, Cursor & Privacy */}
@@ -3719,6 +4171,24 @@ export function WonderBoardScreen({
               ))}
             </View>
 
+            <Text style={styles.sectionLbl}>Ngôn ngữ học trên bảng</Text>
+            <View style={styles.wrapRow}>
+              {TARGET_LANG_OPTIONS.map((langOpt) => (
+                <Pressable
+                  key={langOpt.key}
+                  style={[
+                    styles.modeChip,
+                    (board.targetLanguage ?? 'auto') === langOpt.key && styles.modeChipActive,
+                  ]}
+                  onPress={() =>
+                    updateActiveBoard((b) => ({ ...b, targetLanguage: langOpt.key }))
+                  }
+                >
+                  <Text style={styles.modeChipText}>{langOpt.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+
             <Text style={styles.sectionLbl}>Mức độ hướng dẫn (Guidance Level)</Text>
             <View style={styles.wrapRow}>
               {GUIDANCE_OPTIONS.map((gOpt) => (
@@ -3780,6 +4250,20 @@ export function WonderBoardScreen({
                   Giảm nét chạm tay sau khi dùng bút: {palmGuardEnabled ? 'Bật' : 'Tắt'}
                 </Text>
               </Pressable>
+              <Pressable
+                style={styles.toggleRow}
+                onPress={() =>
+                  updateActiveBoard((b) => ({
+                    ...b,
+                    handwritingSynthesisEnabled: !b.handwritingSynthesisEnabled,
+                  }))
+                }
+              >
+                <Text style={styles.toggleText}>
+                  Mô phỏng nét viết skeleton (Riddle):{' '}
+                  {board.handwritingSynthesisEnabled ? 'Bật' : 'Tắt (mặc định ổn định)'}
+                </Text>
+              </Pressable>
             </View>
 
             <Text style={styles.sectionLbl}>Hiệu năng & Hồ sơ SEED</Text>
@@ -3795,15 +4279,60 @@ export function WonderBoardScreen({
 
             <Text style={styles.sectionLbl}>Chẩn đoán Nhận dạng (Developer Diagnostics)</Text>
             <Text style={styles.popoverNote}>
+              Vision Cloud:{' '}
+              {serverHealth?.visionReady
+                ? `Sẵn sàng (${
+                    [
+                      serverHealth.providers?.deepseek ? 'DeepSeek deepseek-flash' : '',
+                      serverHealth.providers?.gemini ? 'Gemini' : '',
+                      serverHealth.providers?.openai ? 'OpenAI' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' / ') || 'Gateway'
+                  })`
+                : privacy.gatewayUrl.trim()
+                  ? `Gateway: ${privacy.gatewayUrl.trim()}`
+                  : 'Chưa cấu hình khóa server (.env.local)'}
+              {'\n'}
               {recognitionDiagnostics.length === 0
-                ? 'Chưa có vùng chữ nào được phân tích. Cloud Vision chỉ chạy khi cấu hình Gateway hoặc API Key.'
+                ? 'Chưa có vùng chữ nào được phân tích.'
                 : recognitionDiagnostics
                     .map(
                       (d) =>
-                        `[${d.regionId.slice(-6)}] ${d.providerId} (${d.recognitionStatus}) | ${d.fallbackReason} | Map: ${d.mappingStatus} | ${d.providerLatencyMs}ms`
+                        `[${d.regionId}] ${d.providerId} (${d.recognitionStatus}) | ${d.providerLatencyMs}ms | hash=${d.inputImageHash ?? '-'} | strokes=${d.sourceStrokeIds?.join(',') || '-'} | raw="${d.rawTranscription ?? ''}" | text="${d.recognizedText}" | candidates=${d.candidateAlternatives.join(',') || '-'} | confidence=${d.confidence.toFixed(2)} | structure=${d.structuralVerification?.verdict ?? '-'}:${d.structuralVerification?.side ?? '-'} | intent=${d.learningIntent ?? '-'} | concept=${d.conceptIds?.join(',') || '-'} | action=${d.annotationDecision ?? '-'} | notes=${d.annotationIds?.join(',') || '-'} | ${d.providerFailureReason ?? d.fallbackReason}`
                     )
                     .join('\n')}
             </Text>
+            {Platform.OS === 'web' &&
+              recognitionDiagnostics.some((d) => Boolean(d.cropDataUrl)) && (
+                <View style={{ marginBottom: 8 }}>
+                  <Pressable
+                    style={[styles.modeChip, { alignSelf: 'flex-start', marginBottom: 6 }]}
+                    onPress={() => setShowDevCropPreview((v) => !v)}
+                  >
+                    <Text style={styles.modeChipText}>
+                      {showDevCropPreview ? 'Ẩn ảnh crop gửi Vision' : 'Xem ảnh crop gửi Vision'}
+                    </Text>
+                  </Pressable>
+                  {showDevCropPreview && recognitionDiagnostics.filter((d) => d.cropDataUrl).map((d) => (
+                    <View key={d.regionId}>
+                      <Text style={styles.popoverNote}>{d.regionId} · {d.inputImageHash}</Text>
+                      {React.createElement('img', {
+                        src: d.cropDataUrl,
+                        alt: `Vùng chữ ${d.regionId}`,
+                        style: {
+                          width: '100%',
+                          maxHeight: 140,
+                          objectFit: 'contain',
+                          borderRadius: 8,
+                          border: '1px solid #D6CCC2',
+                          backgroundColor: '#FFFFFF',
+                        },
+                      })}
+                    </View>
+                  ))}
+                </View>
+              )}
 
             <Text style={styles.sectionLbl}>AI Gateway (Production) & Quyền riêng tư</Text>
             <TextInput
@@ -3870,57 +4399,13 @@ export function WonderBoardScreen({
 
         {/* Bottom Floating Collapsible Toolbar */}
         <View style={[styles.bottomDock, isPhone && styles.bottomDockPhone]}>
-          {latestAmbiguousRegion &&
-            !serverHealth?.visionReady &&
-            selectedStrokeIds.length === 0 && (
-              <View style={[styles.quickWriteBar, { backgroundColor: theme.uiSurfaceHex }]}>
-                <TextInput
-                  style={styles.quickWriteInput}
-                  value={ambiguousConfirmDraft}
-                  onChangeText={setAmbiguousConfirmDraft}
-                  placeholder="Chưa đọc rõ nét vẽ tay — nhập chữ vừa viết để AI chấm..."
-                  placeholderTextColor="#8C7A6B"
-                />
-                <Pressable
-                  style={[
-                    styles.quickWriteBtn,
-                    ambiguousConfirmDraft.trim().length === 0 && { opacity: 0.45 },
-                  ]}
-                  disabled={ambiguousConfirmDraft.trim().length === 0}
-                  onPress={() => {
-                    const clean = ambiguousConfirmDraft.trim();
-                    if (!clean || !latestAmbiguousRegion) return;
-                    const updatedReg = applyConfirmedUserTranscript(latestAmbiguousRegion, clean);
-                    const nextRegs = latestBoardRef.current.regions.map((r) =>
-                      r.regionId === latestAmbiguousRegion.regionId ? updatedReg : r
-                    );
-                    const rev = latestBoardRef.current.revision;
-                    updateActiveBoard((b) => ({ ...b, regions: nextRegs }));
-                    setAmbiguousConfirmDraft('');
-                    setDismissedAmbiguousRegionId(latestAmbiguousRegion.regionId);
-                    setTimeout(() => runAmbientAnalysis(rev, true), 30);
-                  }}
-                >
-                  <Text style={styles.quickWriteBtnText}>Chấm bằng AI</Text>
-                </Pressable>
-                <Pressable
-                  style={{ paddingHorizontal: 6, paddingVertical: 4 }}
-                  onPress={() => setDismissedAmbiguousRegionId(latestAmbiguousRegion.regionId)}
-                >
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#8C7A6B' }}>
-                    {'\u00D7'}
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-
           {showTypedComposer && !toolbarCollapsed && (
             <View style={[styles.quickWriteBar, { backgroundColor: theme.uiSurfaceHex }]}>
               <TextInput
                 style={styles.quickWriteInput}
                 value={boardDraftText}
                 onChangeText={setBoardDraftText}
-                placeholder="Gõ phụ trợ câu Hàn/Việt đưa lên bảng..."
+                placeholder="Gõ chữ Hàn / Anh / Việt đưa lên bảng..."
                 placeholderTextColor="#8C7A6B"
               />
               <Pressable

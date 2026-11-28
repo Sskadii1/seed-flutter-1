@@ -1,0 +1,113 @@
+{
+  "status": "LIVE_VISION_VALIDATION_PASS",
+  "timestamp": "2026-11-27T10:04:28.207Z",
+  "providersAvailable": [
+    "deepseek-vision-gateway:deepseek-flash"
+  ],
+  "results": [
+    {
+      "id": "real_ko_hakgyoeseo_97pct",
+      "file": "media_1795766655797_ecc3745f.png",
+      "provider": "deepseek-vision-gateway",
+      "model": "deepseek-flash",
+      "ok": true,
+      "httpStatus": 200,
+      "latencyMs": 750,
+      "recognizedText": "학교에서",
+      "rawTranscription": "학교에서",
+      "contentType": "word",
+      "completenessStatus": "complete",
+      "confidence": 0.98,
+      "postHocGroundTruth": "학교에서",
+      "charErrorRate": 0,
+      "usage": {
+        "prompt_tokens": 751,
+        "completion_tokens": 148,
+        "total_tokens": 899,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 751
+      }
+    },
+    {
+      "id": "real_ko_a_eo_25pct",
+      "file": "media_1795751985724_69798feb.png",
+      "provider": "deepseek-vision-gateway",
+      "model": "deepseek-flash",
+      "ok": true,
+      "httpStatus": 200,
+      "latencyMs": 455,
+      "recognizedText": "아",
+      "rawTranscription": "아",
+      "contentType": "hangul_syllable",
+      "completenessStatus": "complete",
+      "confidence": 0.95,
+      "postHocGroundTruth": "아 어",
+      "charErrorRate": 0.5,
+      "usage": {
+        "prompt_tokens": 725,
+        "completion_tokens": 171,
+        "total_tokens": 896,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 597
+      }
+    },
+    {
+      "id": "real_ko_sa_a_34pct",
+      "file": "media_1795752084137_d252e6fe.png",
+      "provider": "deepseek-vision-gateway",
+      "model": "deepseek-flash",
+      "ok": true,
+      "httpStatus": 200,
+      "latencyMs": 545,
+      "recognizedText": "아 어",
+      "rawTranscription": "아 어",
+      "contentType": "word",
+      "completenessStatus": "complete",
+      "confidence": 0.95,
+      "postHocGroundTruth": "사 아",
+      "charErrorRate": 1,
+      "usage": {
+        "prompt_tokens": 751,
+        "completion_tokens": 171,
+        "total_tokens": 922,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 623
+      }
+    },
+    {
+      "id": "real_ko_mobile_a",
+      "file": "media_1795750280490_9491ceba.jpg",
+      "provider": "deepseek-vision-gateway",
+      "model": "deepseek-flash",
+      "ok": true,
+      "httpStatus": 200,
+      "latencyMs": 451,
+      "recognizedText": "아",
+      "rawTranscription": "아",
+      "contentType": "hangul_syllable",
+      "completenessStatus": "complete",
+      "confidence": 0.98,
+      "postHocGroundTruth": "아",
+      "charErrorRate": 0,
+      "usage": {
+        "prompt_tokens": 712,
+        "completion_tokens": 149,
+        "total_tokens": 861,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 584
+      }
+    }
+  ]
+}

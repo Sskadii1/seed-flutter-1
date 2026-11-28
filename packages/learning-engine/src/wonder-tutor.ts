@@ -3,6 +3,7 @@ import {
   WONDER_BOARD_THEMES,
   WonderAnnotation,
   WonderAnnotationSchema,
+  WonderBBox,
   WonderBeginnerLoopState,
   WonderBoardAction,
   WonderBoardActionSchema,
@@ -13,6 +14,9 @@ import {
   WonderHangulDemoSpec,
   WonderLearningEvent,
   WonderRecognitionRegion,
+  WonderSemanticTree,
+  WonderSpatialTeachingAction,
+  WonderSpatialTeachingActionSchema,
   WonderTeachingCard,
 } from '@seed/schema';
 import { attachParticle, hasBatchim } from './hangul';
@@ -24,7 +28,15 @@ import {
   generateScallopedCloudGeometry,
   hashString,
 } from './wonder-board';
+import {
+  buildHierarchicalSemanticTree,
+  reconcileSemanticAnnotations,
+  selectInterventionGranularity,
+} from './wonder-hierarchy';
 import { buildHangulStrokeOrderDemo } from './hangul-stroke-order';
+import { buildEnglishDiscoveryCard, describeEnglishWordVi } from './wonder-english';
+import { decomposeHangulUnit } from './wonder-hangul';
+import { findWonderPracticeActivities } from './wonder-practice';
 
 function tokenizeMeaningfulRoots(text: string): string[] {
   return text
@@ -86,6 +98,9 @@ export function classifyLearningIntents(
     lower.includes('giới thiệu bản thân') ||
     lower.includes('muốn học') ||
     lower.includes('học tiếng hàn') ||
+    lower.includes('học tiếng anh') ||
+    lower.includes('tiếng anh') ||
+    lower.includes('english') ||
     lower.includes('cách gọi')
   ) {
     const topic = lower.includes('giới thiệu')
@@ -104,14 +119,25 @@ export function classifyLearningIntents(
   }
 
   // 2. Question / Meaning / Translation / Pronunciation / Grammar / How to write
-  if (lower.includes('nghĩa là gì') || lower.includes('là gì?') || lower.includes('mean')) {
+  if (
+    lower.includes('nghĩa là gì') ||
+    lower.includes('là gì?') ||
+    lower.includes('mean') ||
+    lower.includes('what does')
+  ) {
     intents.push({
       intent: 'ASK_MEANING',
       confidence: 0.91,
       evidence: [`Meaning question marker in "${txt}"`],
     });
   }
-  if (lower.includes('dịch') || lower.includes('tiếng hàn là gì') || lower.includes('nói sao')) {
+  if (
+    lower.includes('dịch') ||
+    lower.includes('tiếng hàn là gì') ||
+    lower.includes('tiếng anh là gì') ||
+    lower.includes('how do you say') ||
+    lower.includes('nói sao')
+  ) {
     intents.push({
       intent: 'ASK_TRANSLATION',
       confidence: 0.88,
@@ -208,6 +234,21 @@ export function classifyLearningIntents(
         intent: 'PRACTICE_SENTENCE',
         confidence: 0.84,
         evidence: [`Multi-word Korean sentence (${wordCount} tokens)`],
+      });
+    }
+  } else if (region.language === 'en' && /[A-Za-z]/.test(txt)) {
+    const wordCount = txt.split(/\s+/).filter(Boolean).length;
+    if (wordCount <= 1 && !/[.!?]$/.test(txt)) {
+      intents.push({
+        intent: 'PRACTICE_VOCABULARY',
+        confidence: 0.79,
+        evidence: [`Single English word "${txt}"`],
+      });
+    } else if (intents.length === 0) {
+      intents.push({
+        intent: 'PRACTICE_SENTENCE',
+        confidence: 0.84,
+        evidence: [`Multi-word English sentence (${wordCount} tokens)`],
       });
     }
   }
@@ -353,6 +394,11 @@ const KOREAN_PHRASE_EXPLANATIONS: Array<{
 ];
 
 export interface WonderTutorResult {
+  practiceByRegionId: Record<string, {
+    activityId: string;
+    conceptId?: string;
+    suppressedReason?: string;
+  }>;
   intentsByRegionId: Record<string, WonderDetectedIntent[]>;
   scheduledActions: WonderBoardAction[];
   deferredActions: WonderBoardAction[];
@@ -363,6 +409,8 @@ export interface WonderTutorResult {
   nextBeginnerLoop: WonderBeginnerLoopState | undefined;
   newEvents: WonderLearningEvent[];
   recommendedTeacherState: WonderBoardDocument['teacherState'];
+  semanticTree: WonderSemanticTree;
+  retractedAnnotationIds: string[];
 }
 
 /**
@@ -379,6 +427,10 @@ export function orchestrateWonderTutor(params: {
   existingTeachingCards: WonderTeachingCard[];
   learnerProfile?: AdaptiveAiProfile;
   recordedEventKeys?: Set<string>;
+  previousTree?: WonderSemanticTree;
+  nowMs?: number;
+  writingCadenceMs?: number;
+  provisionalWindowMs?: number;
 }): WonderTutorResult {
   const {
     board,
@@ -388,6 +440,20 @@ export function orchestrateWonderTutor(params: {
     existingTeachingCards,
     recordedEventKeys = new Set<string>(),
   } = params;
+
+  const semanticTree = buildHierarchicalSemanticTree({
+    boardId: board.id,
+    revision: board.revision,
+    strokes: board.strokes,
+    regions,
+    previousTree: params.previousTree ?? board.semanticTree,
+    nowMs: params.nowMs,
+    writingCadenceMs: params.writingCadenceMs,
+    provisionalWindowMs: params.provisionalWindowMs,
+  });
+  const semReconciled = reconcileSemanticAnnotations(existingAnnotations, semanticTree);
+  const activeExistingAnnotations = semReconciled.nextAnnotations;
+  const retractedAnnotationIds = semReconciled.retractedAnnotationIds;
 
   const theme = WONDER_BOARD_THEMES[board.themeId];
   const guidanceLevel: WonderGuidanceLevel =
@@ -401,6 +467,7 @@ export function orchestrateWonderTutor(params: {
   if (!board.aiEnabled || board.aiMode === 'focus') {
     return {
       intentsByRegionId: {},
+      practiceByRegionId: {},
       scheduledActions: [],
       deferredActions: board.deferredActions ?? [],
       annotationsToAdd: [],
@@ -410,6 +477,8 @@ export function orchestrateWonderTutor(params: {
       nextBeginnerLoop: board.beginnerLoop,
       newEvents: [],
       recommendedTeacherState: 'IDLE',
+      semanticTree,
+      retractedAnnotationIds: [],
     };
   }
 
@@ -429,7 +498,8 @@ export function orchestrateWonderTutor(params: {
 
   // 1. Evaluate evidence-based self-corrections cleanly
   const resolvedAnnotationIds: string[] = [];
-  for (const prevAnn of existingAnnotations) {
+  for (const prevAnn of activeExistingAnnotations) {
+    if (prevAnn.status !== 'active') continue;
     const ev = evaluateSelfCorrectionEvidence(prevAnn, regions, context);
     if (ev.resolved) {
       resolvedAnnotationIds.push(prevAnn.annotation_id);
@@ -456,21 +526,179 @@ export function orchestrateWonderTutor(params: {
   const occupiedBoxes = [
     ...occupiedRegionClouds,
     ...activeStrokes.map((s) => s.bbox),
-    ...existingAnnotations.filter((a) => a.status === 'active').map((a) => a.note_geometry),
+    ...activeExistingAnnotations.filter((a) => a.status === 'active').map((a) => a.note_geometry),
     ...existingTeachingCards.map((c) => c.geometry),
   ];
 
   // Track candidate annotations produced for multi-error Korean regions
   const annotationsToAdd: WonderAnnotation[] = [];
+  const practiceByRegionId: WonderTutorResult['practiceByRegionId'] = {};
+  const confirmedTargets = new Map<string, string>();
+  const createdByStrokeId = new Map(board.strokes.map((stroke) => [stroke.id, stroke.createdAt]));
+  for (const reg of regions) {
+    const targets = context.relations.flatMap((relation) => {
+      if (relation.fromRegionId !== reg.regionId || relation.relationType !== 'answer_to_ai_card') return [];
+      const card = existingTeachingCards.find((item) => item.cardId === relation.toRegionId);
+      return card?.practiceTarget && decomposeHangulUnit(card.practiceTarget) &&
+        reg.strokeIds.length && reg.strokeIds.every((id) => (createdByStrokeId.get(id) ?? -1) >= card.createdAt)
+        ? [card.practiceTarget.trim().normalize('NFC')] : [];
+    });
+    if (new Set(targets).size === 1 && reg.recognitionStatus === 'RECOGNIZED' &&
+        reg.completeness === 'complete' && reg.confidence >= 0.85 && decomposeHangulUnit(reg.recognizedText)) {
+      confirmedTargets.set(reg.regionId, targets[0]);
+    }
+  }
+  const addPracticeNote = (input: {
+    id: string;
+    activityId: string;
+    conceptId: string;
+    region: WonderRecognitionRegion;
+    text: string;
+    strokeIds: string[];
+    bbox: WonderBBox;
+    start: number;
+    end: number;
+    header: string;
+    explanation: string;
+    error?: boolean;
+  }) => {
+    const { id, activityId, conceptId, region, text, strokeIds, bbox, start, end, header, explanation, error } = input;
+    if (activeExistingAnnotations.some((a) => a.annotation_id === id && ['active', 'dismissed'].includes(a.status))) return;
+    const { noteBox, placement, arrow } = computeCollisionFreePlacement({
+      targetBox: bbox, desiredWidth: 220, desiredHeight: 96, occupiedBoxes,
+    });
+    occupiedBoxes.push(noteBox);
+    annotationsToAdd.push({
+      annotation_id: id, stable_key: id, cloud_seed: hashString(id),
+      board_id: board.id, source_revision: region.revision, source_stroke_ids: strokeIds,
+      recognized_text: region.recognizedText, target_text: text, target_span: { start, end },
+      target_geometry: bbox, note_geometry: noteBox, arrow_path: arrow,
+      annotation_type: error ? 'spelling_correction' : 'explanation',
+      linguistic_category: 'hangul_shape', severity: error ? 'error' : 'info',
+      granularity: decomposeHangulUnit(text) ? 'CHARACTER' : 'WORD',
+      confidence: region.confidence, suggested_correction: header, explanation, hint: '',
+      visual_style: { shape: error ? 'scalloped_cloud' : 'soft_bubble', accentColor: error ? theme.aiCorrectionHex : theme.aiSupportHex },
+      placement_preference: placement, learning_concept_ids: [conceptId], teaching_activity_id: activityId,
+      error_identity: error ? id : undefined,
+      created_at: Date.now(), status: 'active', lifecycle_state: 'queued',
+      animation_progress: { cloud: 0, arrow: 0, correction: 0, explanation: 0, completed: false },
+    });
+  };
+
+  const activities = findWonderPracticeActivities(board, regions);
+  for (const activity of activities) {
+    if (activity.intent === 'UNKNOWN_PRACTICE_INTENT' && activity.occurrences.some(({ region }) =>
+      semanticTree.nodes.find((n) => n.id === `sent_${region.regionId}`)
+        ?.spacingHypotheses?.[0]?.spacingIssue === 'excessive_spaces')) continue;
+    if (board.targetLanguage === 'en' && activity.occurrences[0].region.language !== 'en') continue;
+    if (board.targetLanguage === 'ko' && activity.occurrences[0].region.language !== 'ko') continue;
+    const correctOccurrences = activity.occurrences.filter(({ region, text }) =>
+      !confirmedTargets.has(region.regionId) || confirmedTargets.get(region.regionId) === text.normalize('NFC'));
+    const anchor = correctOccurrences[0];
+    const conceptId = activity.conceptId;
+    const teach = anchor && conceptId && correctOccurrences.length === activity.occurrences.length &&
+      board.aiMode !== 'gentle' && guidanceLevel !== 'minimal';
+    const explanation = activity.explanation ?? (anchor && (anchor.region.language === 'en'
+      ? describeEnglishWordVi(anchor.text)
+      : describeKoreanSyllableOrWordVi(anchor.text))?.explanation);
+    const annotationId = `ann_practice_${activity.id}_${conceptId}`;
+    const existingGroup = activeExistingAnnotations.some((a) => a.annotation_id === annotationId &&
+      ['active', 'dismissed'].includes(a.status));
+    for (const { region } of activity.occurrences) {
+      intentsByRegionId[region.regionId] = [{
+        intent: activity.intent, confidence: conceptId ? 0.9 : 0.5,
+        evidence: ['Verified text occurrences and nearby writing cadence'],
+      }];
+      practiceByRegionId[region.regionId] = {
+        activityId: activity.id, conceptId,
+        suppressedReason: !conceptId ? 'UNKNOWN_PRACTICE_INTENT'
+          : existingGroup || anchor?.region.regionId !== region.regionId ? 'SHARED_PRACTICE_CONCEPT'
+          : !teach || !explanation ? 'PRACTICE_OBSERVATION' : undefined,
+      };
+    }
+    const members = new Set(activity.occurrences.flatMap((item) => item.strokeIds));
+    for (const ann of activeExistingAnnotations) {
+      if ((!teach || ann.annotation_id !== annotationId) && ann.status === 'active' && ann.severity === 'info' &&
+          ann.source_stroke_ids.length > 0 && ann.source_stroke_ids.every((id) => members.has(id)) &&
+          (ann.teaching_activity_id === activity.id ||
+            (ann.annotation_type === 'explanation' && activity.occurrences.some((item) => item.text === ann.target_text)))) {
+        retractedAnnotationIds.push(ann.annotation_id);
+      }
+    }
+    if (!teach || !explanation) continue;
+    addPracticeNote({
+      id: annotationId, activityId: activity.id, conceptId, region: anchor.region, text: anchor.text,
+      strokeIds: anchor.strokeIds, bbox: anchor.bbox, start: anchor.startIndex, end: anchor.endIndex,
+      header: [...new Set(activity.occurrences.map((item) => item.text))].join(' · '),
+      explanation,
+    });
+  }
 
   for (const reg of regions) {
+    const expected = confirmedTargets.get(reg.regionId);
+    if (!expected) continue;
+    const text = reg.recognizedText.trim().normalize('NFC');
+    const existing = practiceByRegionId[reg.regionId];
+    const identity = reg.recognitionId ?? JSON.stringify([board.id, [...reg.strokeIds].sort()]);
+    const activityId = existing?.activityId ?? identity;
+    const conceptId = `handwriting:${expected}`;
+    intentsByRegionId[reg.regionId] = [{
+      intent: 'HANDWRITING_IMPROVEMENT', confidence: reg.confidence,
+      evidence: ['Response to an explicit writing target'],
+    }, ...(intentsByRegionId[reg.regionId] ?? [])];
+    practiceByRegionId[reg.regionId] = { activityId, conceptId,
+      suppressedReason: expected === text ? 'EXPLICIT_TARGET_MATCH' : undefined };
+    if (expected !== text) {
+      addPracticeNote({
+        id: `ann_practice_error_${identity}_${expected}_${text}`, activityId, conceptId,
+        region: reg, text, strokeIds: reg.strokeIds, bbox: reg.bbox, start: 0, end: reg.recognizedText.length,
+        header: expected,
+        explanation: `Mục tiêu của bài luyện là ${expected}. ${describeKoreanSyllableOrWordVi(expected)?.explanation ?? ''}`.trim(),
+        error: true,
+      });
+    }
+  }
+
+  for (const reg of regions) {
+    if (practiceByRegionId[reg.regionId]) continue;
     const intents = classifyLearningIntents(reg, context, board);
     intentsByRegionId[reg.regionId] = intents;
+
+    const sentenceNode = semanticTree.nodes.find((n) => n.id === `sent_${reg.regionId}`);
+    const primaryIntent = intents[0];
+    const granularity = sentenceNode
+      ? selectInterventionGranularity(sentenceNode, board, primaryIntent?.intent)
+      : undefined;
+
+    const adjUnrecognized = regions.some(
+      (r2) =>
+        r2.regionId !== reg.regionId &&
+        r2.completeness !== 'non_text' &&
+        r2.recognitionStatus !== 'RECOGNIZED' &&
+        Math.max(
+          0,
+          reg.bbox.minX - r2.bbox.maxX,
+          r2.bbox.minX - reg.bbox.maxX
+        ) <= Math.max(120, (sentenceNode?.localScalePx ?? 48) * 2.4) &&
+        Math.max(
+          0,
+          reg.bbox.minY - r2.bbox.maxY,
+          r2.bbox.minY - reg.bbox.maxY
+        ) <= Math.max(90, (sentenceNode?.localScalePx ?? 48) * 1.4)
+    );
+    const isSingleCharWaitForAdjacent =
+      granularity === 'CHARACTER' &&
+      /^[\uAC00-\uD7A3]$/.test(reg.recognizedText.trim()) &&
+      adjUnrecognized;
 
     if (
       reg.completeness === 'non_text' ||
       reg.completeness === 'in_progress' ||
       reg.completeness === 'low_confidence' ||
+      reg.recognitionStatus !== 'RECOGNIZED' ||
+      reg.confidence < 0.78 ||
+      isSingleCharWaitForAdjacent ||
+      granularity === 'SILENT_OBSERVE' ||
       intents.every((i) => i.intent === 'UNKNOWN_INTENT' || i.intent === 'FREE_DRAWING')
     ) {
       // Explicit OBSERVE / WAIT action: never emit fake feedback
@@ -497,7 +725,6 @@ export function orchestrateWonderTutor(params: {
     }
 
     const txt = reg.recognizedText;
-    const primaryIntent = intents[0];
 
     // 2. Question intents: ASK_HOW_TO_WRITE -> NIKL Hangul Stroke Order Demo
     if (intents.some((i) => i.intent === 'ASK_HOW_TO_WRITE')) {
@@ -627,26 +854,43 @@ export function orchestrateWonderTutor(params: {
         });
         occupiedBoxes.push(noteBox);
 
+        const isEnglishTopic =
+          board.targetLanguage === 'en' ||
+          txt.toLowerCase().includes('tiếng anh') ||
+          txt.toLowerCase().includes('english');
+        const enTopicCard = isEnglishTopic ? buildEnglishDiscoveryCard(txt) : null;
         const isSelfIntro = topic === 'self_intro' || topic === 'hangul_basics';
-        const phrase = isSelfIntro ? '안녕하세요.' : topic === 'coffee' ? '커피 한 잔 주세요.' : '감사합니다.';
-        const promptTemplate = isSelfIntro ? '저는 ___ 이에요.' : phrase;
+        const phrase = enTopicCard
+          ? enTopicCard.phrase
+          : isSelfIntro
+            ? '안녕하세요.'
+            : topic === 'coffee'
+              ? '커피 한 잔 주세요.'
+              : '감사합니다.';
+        const promptTemplate = enTopicCard ? enTopicCard.phrase : isSelfIntro ? '저는 ___ 이에요.' : phrase;
         const card: WonderTeachingCard = {
           cardId: `card_loop1_${board.id}_${reg.regionId}`,
           boardId: board.id,
           sourceRevision: reg.revision,
           geometry: noteBox,
-          titleVi: 'Bước 1 — Giáo viên AI hướng dẫn',
+          titleVi: enTopicCard
+            ? 'Bước 1 — Giáo viên AI hướng dẫn tiếng Anh'
+            : 'Bước 1 — Giáo viên AI hướng dẫn',
           koreanPhrase: phrase,
-          ipa: isSelfIntro ? '[annjʌŋhasejo]' : undefined,
-          explanationVi: isSelfIntro
-            ? 'Bước 1: Xin chào là "안녕하세요". Bước 2: Thử viết câu giới thiệu: "저는 [tên bạn] 이에요/예요." ngay bên dưới nhé!'
-            : `Mẫu câu khởi đầu: "${phrase}". Bạn hãy viết thử bên dưới để AI xem nhé.`,
-          breakdown: isSelfIntro
-            ? [
-                { token: '안녕하세요', meaningVi: 'Xin chào' },
-                { token: '저는 ... 이에요/예요', meaningVi: 'Tôi là ...' },
-              ]
-            : [{ token: phrase, meaningVi: 'Mẫu thực hành' }],
+          ipa: enTopicCard ? enTopicCard.ipa : isSelfIntro ? '[annjʌŋhasejo]' : undefined,
+          explanationVi: enTopicCard
+            ? enTopicCard.explanation
+            : isSelfIntro
+              ? 'Bước 1: Xin chào là "안녕하세요". Bước 2: Thử viết câu giới thiệu: "저는 [tên bạn] 이에요/예요." ngay bên dưới nhé!'
+              : `Mẫu câu khởi đầu: "${phrase}". Bạn hãy viết thử bên dưới để AI xem nhé.`,
+          breakdown: enTopicCard
+            ? enTopicCard.breakdown
+            : isSelfIntro
+              ? [
+                  { token: '안녕하세요', meaningVi: 'Xin chào' },
+                  { token: '저는 ... 이에요/예요', meaningVi: 'Tôi là ...' },
+                ]
+              : [{ token: phrase, meaningVi: 'Mẫu thực hành' }],
           ghostHandwritingText: phrase,
           ghostBBox: {
             minX: noteBox.minX + 10,
@@ -661,7 +905,7 @@ export function orchestrateWonderTutor(params: {
         };
         teachingCardsToAdd.push(card);
 
-        if (topic === 'hangul_basics') {
+        if (topic === 'hangul_basics' && !enTopicCard) {
           hangulDemosToAdd.push(
             buildHangulStrokeOrderDemo({
               demoId: `demo_intro_${board.id}_${reg.regionId}`,
@@ -718,8 +962,19 @@ export function orchestrateWonderTutor(params: {
     }
 
     // 5. Fallback / Core Korean pedagogy & unseen copula/particle grammar analysis
-    // Provide helpful explanation for standalone Korean words/syllables OR side-by-side practice items (e.g. "사 아")
+    // Provide helpful explanation for standalone Korean words/syllables OR side-by-side practice items (e.g. "사 아").
+    // Never treat spacing-decoded Case B/C words or multi-word sentences ("학 교 에", "저 는 한 국 어 를...") as independent isolated syllable lists.
+    const topHyp = sentenceNode?.spacingHypotheses?.[0];
+    const hasSpacingDecodedParent = Boolean(topHyp && topHyp.spacingIssue !== 'none');
+    const isDecodedSingleMergedWord = Boolean(
+      topHyp &&
+        topHyp.spacingIssue === 'excessive_spaces' &&
+        topHyp.tokens.length === 1 &&
+        !/^[\uAC00-\uD7A3]$/.test(topHyp.tokens[0].replace(/[.!?]+$/, ''))
+    );
+
     const isPracticeList =
+      !hasSpacingDecodedParent &&
       reg.spans.length >= 2 &&
       !/[.!?]$/.test(txt.trim()) &&
       reg.spans.every((sp) => {
@@ -733,14 +988,39 @@ export function orchestrateWonderTutor(params: {
         }
         return true;
       });
+    const EN_SENTENCE_MARKERS = new Set([
+      'i', 'you', 'he', 'she', 'it', 'we', 'they',
+      'am', 'is', 'are', 'was', 'were', 'be', 'been',
+      'have', 'has', 'had', 'do', 'does', 'did',
+      'can', 'could', 'will', 'would', 'should', 'must', 'may', 'might',
+      'the', 'a', 'an', 'and', 'but', 'or', 'to', 'in', 'on', 'at', 'for', 'yesterday',
+    ]);
+    const isEnglishPracticeList =
+      reg.language === 'en' &&
+      (board.targetLanguage ?? 'auto') !== 'ko' &&
+      reg.spans.length >= 2 &&
+      reg.spans.length <= 5 &&
+      !/[.!?]$/.test(txt.trim()) &&
+      reg.spans.every((sp) => {
+        const cleanT = sp.text.trim();
+        return /^[A-Za-z][A-Za-z'-]{1,20}$/.test(cleanT) && !EN_SENTENCE_MARKERS.has(cleanT.toLowerCase());
+      });
+
     if (
-      (reg.language === 'ko' || reg.language === 'mixed') &&
-      (primaryIntent.intent === 'PRACTICE_VOCABULARY' || isPracticeList) &&
+      (((reg.language === 'ko' || reg.language === 'mixed') &&
+        (board.targetLanguage ?? 'auto') !== 'en' &&
+        (primaryIntent.intent === 'PRACTICE_VOCABULARY' || isPracticeList || isDecodedSingleMergedWord)) ||
+        (reg.language === 'en' &&
+          (board.targetLanguage ?? 'auto') !== 'ko' &&
+          (primaryIntent.intent === 'PRACTICE_VOCABULARY' || isEnglishPracticeList))) &&
       (board.aiMode === 'tutor' || board.aiMode === 'discovery' || board.aiMode === 'review')
     ) {
+      const mergedDisplayText = isDecodedSingleMergedWord
+        ? topHyp!.proposedText
+        : txt;
       const units =
-        primaryIntent.intent === 'PRACTICE_VOCABULARY' || reg.spans.length <= 1
-          ? [{ text: txt, bbox: reg.bbox, strokeIds: reg.strokeIds, spanStart: 0, spanEnd: txt.length }]
+        isDecodedSingleMergedWord || primaryIntent.intent === 'PRACTICE_VOCABULARY' || reg.spans.length <= 1
+          ? [{ text: mergedDisplayText, bbox: reg.bbox, strokeIds: reg.strokeIds, spanStart: 0, spanEnd: txt.length }]
           : reg.spans.map((sp) => ({
               text: sp.text,
               bbox: sp.bbox,
@@ -751,10 +1031,13 @@ export function orchestrateWonderTutor(params: {
 
       for (let uIdx = 0; uIdx < units.length; uIdx++) {
         const unit = units[uIdx];
-        const desc = describeKoreanSyllableOrWordVi(unit.text);
+        const isUnitEn = reg.language === 'en' || (/^[A-Za-z][A-Za-z'-]*$/.test(unit.text.trim()) && !/[\uAC00-\uD7A3]/.test(unit.text));
+        const desc = isUnitEn
+          ? describeEnglishWordVi(unit.text)
+          : describeKoreanSyllableOrWordVi(unit.text);
         if (!desc) continue;
         const dupWord =
-          existingAnnotations.some(
+          activeExistingAnnotations.some(
             (a) =>
               (a.status === 'active' || a.status === 'dismissed') &&
               a.target_text === unit.text &&
@@ -780,10 +1063,11 @@ export function orchestrateWonderTutor(params: {
           occupiedBoxes,
         });
         occupiedBoxes.push(noteBox);
-        const sortedRegIds = [...unit.strokeIds].sort().join(',');
+        const sortedRegIds = [...unit.strokeIds].sort().join('_');
+        const stableStrokeHash = hashString(sortedRegIds || String(uIdx));
         annotationsToAdd.push({
-          annotation_id: `ann_${board.id}_vocab_${reg.regionId}_${uIdx}`,
-          stable_key: `${board.id}__explanation__vocabulary__${unit.text}__${sortedRegIds || '0'}`,
+          annotation_id: `ann_${board.id}_vocab_${unit.text}_${stableStrokeHash}`,
+          stable_key: `${board.id}__explanation__vocabulary__${unit.text}__${[...unit.strokeIds].sort().join(',') || '0'}`,
           cloud_seed: hashString(unit.text) + 7 + uIdx,
           board_id: board.id,
           source_revision: reg.revision,
@@ -797,6 +1081,8 @@ export function orchestrateWonderTutor(params: {
           annotation_type: 'explanation',
           linguistic_category: 'vocabulary',
           severity: 'info',
+          granularity: isDecodedSingleMergedWord ? 'WORD' : granularity,
+          parent_node_id: sentenceNode?.id,
           confidence: reg.confidence,
           suggested_correction: desc.header,
           explanation: desc.explanation,
@@ -828,7 +1114,7 @@ export function orchestrateWonderTutor(params: {
             const expected = attachParticle(stem, '이에요/예요');
             if (expected !== cleanWord) {
               const dup =
-                existingAnnotations.some(
+                activeExistingAnnotations.some(
                   (a) =>
                     (a.status === 'active' || a.status === 'dismissed') &&
                     a.target_text === cleanWord &&
@@ -860,6 +1146,8 @@ export function orchestrateWonderTutor(params: {
                   annotation_type: 'particle_correction',
                   linguistic_category: 'batchim',
                   severity: 'error',
+                  granularity,
+                  parent_node_id: sentenceNode?.id,
                   confidence: Math.min(0.95, reg.confidence),
                   suggested_correction: expected,
                   explanation: `"${stem}" có patchim nên phải dùng đuôi -이에요 (${expected}) thay cho -예요.`,
@@ -887,21 +1175,45 @@ export function orchestrateWonderTutor(params: {
   }
 
   // Combine with core V2 pedagogy (which checks tense, object particle, place particle, praise, etc.)
+  const eligibleBaseRegions = regions.filter((r) => {
+    if (practiceByRegionId[r.regionId]) return false;
+    const sNode = semanticTree.nodes.find((n) => n.id === `sent_${r.regionId}`);
+    if (!sNode) return true;
+    const g = selectInterventionGranularity(sNode, board);
+    return g !== 'SILENT_OBSERVE';
+  });
+
   const basePed = analyzeBoardPedagogy({
     board,
-    regions,
-    existingAnnotations: [...existingAnnotations, ...annotationsToAdd],
+    regions: eligibleBaseRegions,
+    existingAnnotations: [...activeExistingAnnotations, ...annotationsToAdd],
     existingTeachingCards: [...existingTeachingCards, ...teachingCardsToAdd],
     theme,
   });
 
+  // Annotate basePed outputs with semantic parent_node_id + granularity
+  const sentenceNodes = semanticTree.nodes.filter((n) => n.level === 'sentence');
+  const taggedBaseAnnotations = basePed.nextAnnotations.map((ann) => {
+    const parentSn = sentenceNodes.find((sn) =>
+      ann.source_stroke_ids.some((id) => sn.sourceStrokeIds.includes(id))
+    );
+    const derivedGranularity = parentSn
+      ? selectInterventionGranularity(parentSn, board)
+      : ann.granularity;
+    return {
+      ...ann,
+      granularity: ann.granularity ?? derivedGranularity,
+      parent_node_id: ann.parent_node_id ?? parentSn?.id,
+    };
+  });
+
   // Merge and strictly deduplicate across semantic identity + stroke overlap (P0.4)
   const dedupedAll = deduplicateWonderAnnotations([
-    ...existingAnnotations,
+    ...activeExistingAnnotations,
     ...annotationsToAdd,
-    ...basePed.nextAnnotations,
+    ...taggedBaseAnnotations,
   ]);
-  const existingIdSet = new Set(existingAnnotations.map((a) => a.annotation_id));
+  const existingIdSet = new Set(activeExistingAnnotations.map((a) => a.annotation_id));
   const combinedCandidates = dedupedAll.filter(
     (a) => a.status === 'active' && !existingIdSet.has(a.annotation_id)
   );
@@ -954,7 +1266,8 @@ export function orchestrateWonderTutor(params: {
       actionId: `act_${ann.annotation_id}`,
       boardId: board.id,
       type: ann.severity === 'praise' ? 'DRAW_CHECKMARK' : 'DRAW_CLOUD',
-      sourceRegionIds: [],
+      sourceRegionIds: regions.filter((region) =>
+        ann.source_stroke_ids.some((id) => region.strokeIds.includes(id))).map((region) => region.regionId),
       sourceRevision: ann.source_revision,
       targetSemanticSpan: {
         text: ann.target_text,
@@ -1003,7 +1316,7 @@ export function orchestrateWonderTutor(params: {
       ? 'PLANNING_FEEDBACK'
       : regions.some((r) => r.completeness === 'in_progress')
         ? 'WAITING_FOR_CONTEXT'
-        : existingAnnotations.some(
+        : activeExistingAnnotations.some(
               (a) => a.status === 'active' && !resolvedAnnotationIds.includes(a.annotation_id)
             )
           ? 'WAITING_FOR_LEARNER'
@@ -1011,6 +1324,7 @@ export function orchestrateWonderTutor(params: {
 
   return {
     intentsByRegionId,
+    practiceByRegionId,
     scheduledActions: allCandidateActions.filter((a) => a.status === 'scheduled'),
     deferredActions: deferredActions.slice(-12),
     annotationsToAdd: scheduledAnns,
@@ -1020,5 +1334,157 @@ export function orchestrateWonderTutor(params: {
     nextBeginnerLoop,
     newEvents,
     recommendedTeacherState,
+    semanticTree,
+    retractedAnnotationIds,
   };
+}
+
+/**
+ * Validates and converts a structured Section 10 spatial teaching action (or SSE streamed action)
+ * into a collision-free Layer 4 WonderAnnotation anchored to verified strokes on the board.
+ * Drops invalid schemas, WAIT actions, or stale revisions automatically.
+ */
+export function mapSpatialTeachingActionToAnnotation(params: {
+  rawAction: unknown;
+  boardId: string;
+  currentRevision: number;
+  regions: WonderRecognitionRegion[];
+  occupiedBoxes: WonderBBox[];
+  themeId: WonderBoardDocument['themeId'];
+  seedIndex?: number;
+}): {
+  status: 'APPLIED' | 'WAIT' | 'RETRACT' | 'REJECTED_INVALID' | 'REJECTED_STALE' | 'REJECTED_UNANCHORED';
+  annotation?: WonderAnnotation;
+  retractRegionId?: string;
+} {
+  const parsed = WonderSpatialTeachingActionSchema.safeParse(params.rawAction);
+  if (!parsed.success) {
+    return { status: 'REJECTED_INVALID' };
+  }
+  const act: WonderSpatialTeachingAction = parsed.data;
+  if (act.sourceRevision > 0 && act.sourceRevision !== params.currentRevision) {
+    return { status: 'REJECTED_STALE' };
+  }
+  if (act.type === 'WAIT') {
+    return { status: 'WAIT' };
+  }
+  if (act.type === 'RETRACT_ANNOTATION') {
+    return { status: 'RETRACT', retractRegionId: act.regionId };
+  }
+
+  const matchedRegion = params.regions.find((r) => r.regionId === act.regionId);
+  if (!matchedRegion) {
+    return { status: 'REJECTED_UNANCHORED' };
+  }
+
+  const cleanTarget = act.targetText.trim() || matchedRegion.recognizedText.trim();
+  if (!cleanTarget || !matchedRegion.recognizedText.includes(cleanTarget)) {
+    return { status: 'REJECTED_UNANCHORED' };
+  }
+
+  const matchingSpans = matchedRegion.spans.filter((sp) => sp.text.includes(cleanTarget));
+  if (matchingSpans.length !== 1 && matchedRegion.recognizedText.trim() !== cleanTarget) {
+    return { status: 'REJECTED_UNANCHORED' };
+  }
+  const matchedSpan = matchingSpans.length === 1 ? matchingSpans[0] : undefined;
+  const targetBox = matchedSpan?.bbox ?? matchedRegion.bbox;
+  const strokeIds =
+    matchedSpan?.strokeIds && matchedSpan.strokeIds.length > 0
+      ? matchedSpan.strokeIds
+      : matchedRegion.strokeIds;
+  if (strokeIds.length === 0) {
+    return { status: 'REJECTED_UNANCHORED' };
+  }
+
+  const theme = WONDER_BOARD_THEMES[params.themeId];
+  const isError = act.type === 'MARK_GRAMMAR_ERROR' || act.type === 'WRITE_CORRECTION';
+  const isPraise = act.type === 'PRAISE';
+  const isHint = act.type === 'PROVIDE_HINT';
+  const severity: WonderAnnotation['severity'] = isError
+    ? 'error'
+    : isPraise
+      ? 'praise'
+      : isHint
+        ? 'gentle'
+        : 'info';
+  const accentColor = isError
+    ? theme.aiCorrectionHex
+    : isPraise
+      ? theme.aiPositiveHex
+      : isHint
+        ? theme.aiSuggestionHex
+        : theme.aiSupportHex;
+
+  const estLines = Math.max(2, Math.ceil((act.explanation.length + 24) / 28));
+  const noteW = Math.min(310, Math.max(200, targetBox.width + 44));
+  const noteH = Math.min(185, 48 + estLines * 17);
+  const placement = computeCollisionFreePlacement({
+    targetBox,
+    desiredWidth: noteW,
+    desiredHeight: noteH,
+    preferredOrder: [act.anchorHint, 'below', 'right', 'above', 'left'],
+    occupiedBoxes: params.occupiedBoxes,
+  });
+  params.occupiedBoxes.push(placement.noteBox);
+
+  const stableKey = `spatial_${act.type}_${matchedRegion.regionId}_${cleanTarget}`;
+  const annotation: WonderAnnotation = {
+    annotation_id: `sp_${act.actionId}_${params.currentRevision}_${params.seedIndex ?? 0}`,
+    stable_key: stableKey,
+    cloud_seed: hashString(stableKey) % 10000,
+    board_id: params.boardId,
+    source_revision: params.currentRevision,
+    source_stroke_ids: strokeIds,
+    recognized_text: matchedRegion.recognizedText,
+    target_text: cleanTarget.slice(0, 120),
+    target_span: {
+      start: matchedSpan?.startIndex ?? 0,
+      end: matchedSpan?.endIndex ?? cleanTarget.length,
+    },
+    target_geometry: targetBox,
+    note_geometry: placement.noteBox,
+    arrow_path: placement.arrow,
+    annotation_type: isError
+      ? 'grammar_correction'
+      : isPraise
+        ? 'positive_feedback'
+        : isHint
+          ? 'hint'
+          : 'explanation',
+    linguistic_category: act.semanticTarget === 'character' ? 'hangul_shape' : 'naturalness',
+    severity,
+    confidence: act.confidence,
+    suggested_correction: act.suggestedCorrection.slice(0, 200),
+    explanation: (act.explanation || act.hint || cleanTarget).slice(0, 580),
+    hint: act.hint.slice(0, 280),
+    visual_style: {
+      shape: isPraise ? 'chalk_tick' : 'scalloped_cloud',
+      accentColor,
+    },
+    placement_preference: placement.placement,
+    learning_concept_ids: [`wonder:${matchedRegion.language}:${act.semanticTarget}`],
+    created_at: Date.now(),
+    status: 'active',
+    lifecycle_state: 'queued',
+    animation_progress: {
+      cloud: 0,
+      arrow: 0,
+      correction: 0,
+      explanation: 0,
+      completed: false,
+    },
+    reconciliation_action: 'ADDED',
+    granularity:
+      act.semanticTarget === 'character' || act.semanticTarget === 'syllable'
+        ? 'CHARACTER'
+        : act.semanticTarget === 'word'
+          ? 'WORD'
+          : 'SENTENCE',
+  };
+
+  const valid = WonderAnnotationSchema.safeParse(annotation);
+  if (!valid.success) {
+    return { status: 'REJECTED_INVALID' };
+  }
+  return { status: 'APPLIED', annotation };
 }

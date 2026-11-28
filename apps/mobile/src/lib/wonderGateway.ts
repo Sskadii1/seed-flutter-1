@@ -1,6 +1,9 @@
 import {
   WonderBBox,
+  WonderConversationMemoryTurn,
   WonderCropTransform,
+  WonderSpatialTeachingAction,
+  WonderSpatialTeachingActionSchema,
   WonderStroke,
 } from '@seed/schema';
 import {
@@ -16,9 +19,9 @@ export interface BrowserVisionConfig {
   gatewayToken: string;
   /** True when same-origin /api/wonder/health reports visionReady: true */
   sameOriginVisionReady?: boolean;
-  /** Explicit DEV-ONLY fallback key if no production gatewayUrl is set */
+  /** Explicit DEV-ONLY session-memory key if no production gatewayUrl is set (never persisted to localStorage here) */
   devDirectApiKey?: string;
-  devDirectProvider?: 'gemini' | 'openai' | 'auto';
+  devDirectProvider?: 'gemini' | 'openai' | 'deepseek' | 'auto';
 }
 
 export interface WonderServerHealth {
@@ -81,15 +84,24 @@ export async function fetchWonderServerHealth(
   }
 }
 
+export interface ObservationWindowSnapshotResult {
+  imageDataUrl: string;
+  cropTransform: WonderCropTransform;
+  estimatedVisionTokens: number;
+}
+
 /**
- * Renders ONLY Layer 2 user ink strokes inside `bbox` into a high-contrast white PNG crop.
- * AI clouds, arrows, teaching cards, and background grid/dust are strictly excluded.
+ * Adaptive Ink Snapshot Exporter (adapted from MaximeRivest/riddle `src/ink.rs` `to_png`).
+ * - Exports ONLY clean Layer 2 user ink (black ink on #FFFFFF), strictly excluding AI clouds,
+ *   arrows, chalk dust, and #F5EFE6 UI chrome.
+ * - Uses zoom-independent world coordinates so 25% zoom giant ink stays crisp and unclipped.
+ * - Caps long dimension at 1024px (1280px for multi-word wide lines) to keep vision tokens bounded.
  */
-export function renderRegionInkCropDataUrl(
+export function renderObservationWindowSnapshot(
   regionStrokes: WonderStroke[],
   bbox: WonderBBox,
-  paddingPx = 18
-): { imageDataUrl: string; cropTransform: WonderCropTransform } | null {
+  options?: { paddingPx?: number; maxDimensionPx?: number }
+): ObservationWindowSnapshotResult | null {
   const g = globalThis as unknown as {
     document?: {
       createElement(tag: string): {
@@ -106,6 +118,8 @@ export function renderRegionInkCropDataUrl(
           moveTo(x: number, y: number): void;
           lineTo(x: number, y: number): void;
           quadraticCurveTo(cx: number, cy: number, x: number, y: number): void;
+          arc(x: number, y: number, r: number, s: number, e: number): void;
+          fill(): void;
           stroke(): void;
           save(): void;
           restore(): void;
@@ -123,13 +137,21 @@ export function renderRegionInkCropDataUrl(
   );
   if (userOnly.length === 0) return null;
 
-  const worldMinX = bbox.minX - paddingPx;
-  const worldMinY = bbox.minY - paddingPx;
-  const worldWidth = Math.max(40, bbox.width + paddingPx * 2);
-  const worldHeight = Math.max(40, bbox.height + paddingPx * 2);
-  const scale = Math.min(2.5, Math.max(1.2, 640 / Math.max(worldWidth, worldHeight)));
-  const pixelWidth = Math.max(64, Math.min(1024, Math.round(worldWidth * scale)));
-  const pixelHeight = Math.max(48, Math.min(1024, Math.round(worldHeight * scale)));
+  const pad =
+    typeof options?.paddingPx === 'number'
+      ? Math.max(options.paddingPx, Math.round(Math.min(bbox.width, bbox.height) * 0.12))
+      : Math.max(24, Math.round(Math.min(bbox.width, bbox.height) * 0.14));
+
+  const worldMinX = bbox.minX - pad;
+  const worldMinY = bbox.minY - pad;
+  const worldWidth = Math.max(48, bbox.width + pad * 2);
+  const worldHeight = Math.max(48, bbox.height + pad * 2);
+  const isWideSentence = bbox.width > bbox.height * 2.2 || bbox.width > 700;
+  const maxDim = options?.maxDimensionPx ?? (isWideSentence ? 1280 : 1024);
+
+  const scale = Math.min(2.4, maxDim / Math.max(worldWidth, worldHeight));
+  const pixelWidth = Math.max(96, Math.min(maxDim, Math.round(worldWidth * scale)));
+  const pixelHeight = Math.max(96, Math.min(maxDim, Math.round(worldHeight * scale)));
 
   const canvas = g.document.createElement('canvas');
   canvas.width = pixelWidth;
@@ -143,13 +165,28 @@ export function renderRegionInkCropDataUrl(
   ctx.scale(scale, scale);
   ctx.translate(-worldMinX, -worldMinY);
   ctx.strokeStyle = '#111111';
+  ctx.fillStyle = '#111111';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
+  const adaptiveInkFloor = Math.max(3.6, Math.max(worldWidth, worldHeight) * 0.006);
+
   for (const st of userOnly) {
     if (st.tool === 'eraser_pixel') continue;
-    ctx.lineWidth = Math.max(2.4, st.width);
+    const lw = Math.max(adaptiveInkFloor, st.width);
+    ctx.lineWidth = lw;
     const pts = st.points;
+    if (
+      pts.length === 1 ||
+      (pts.length === 2 && Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) < 3)
+    ) {
+      const px = pts[0].x + st.transform.dx;
+      const py = pts[0].y + st.transform.dy;
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(2.6, lw * 0.65), 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
     ctx.beginPath();
     ctx.moveTo(pts[0].x + st.transform.dx, pts[0].y + st.transform.dy);
     for (let i = 1; i < pts.length; i++) {
@@ -165,6 +202,11 @@ export function renderRegionInkCropDataUrl(
   }
 
   ctx.restore();
+
+  // Tile-based estimate matching OpenAI/Gemini multimodal vision billing buckets
+  const tiles = Math.ceil(pixelWidth / 512) * Math.ceil(pixelHeight / 512);
+  const estimatedVisionTokens = 85 + tiles * 170;
+
   return {
     imageDataUrl: canvas.toDataURL('image/png'),
     cropTransform: {
@@ -176,27 +218,152 @@ export function renderRegionInkCropDataUrl(
       pixelHeight,
       scale,
     },
+    estimatedVisionTokens,
   };
 }
 
+/** Backward-compatible alias used across Wonder Board recognition & diagnostics. */
+export function renderRegionInkCropDataUrl(
+  regionStrokes: WonderStroke[],
+  bbox: WonderBBox,
+  paddingPx?: number
+): { imageDataUrl: string; cropTransform: WonderCropTransform } | null {
+  const snap = renderObservationWindowSnapshot(regionStrokes, bbox, { paddingPx });
+  return snap ? { imageDataUrl: snap.imageDataUrl, cropTransform: snap.cropTransform } : null;
+}
+
 export interface WonderServerTutorAction {
-  type: 'DRAW_CLOUD' | 'WRITE_EXPLANATION' | 'WRITE_EXAMPLE' | 'DRAW_CHECKMARK' | 'WAIT';
+  actionId?: string;
+  type:
+    | 'WAIT'
+    | 'EXPLAIN_CHARACTER'
+    | 'EXPLAIN_WORD'
+    | 'MARK_GRAMMAR_ERROR'
+    | 'PROVIDE_HINT'
+    | 'WRITE_CORRECTION'
+    | 'WRITE_EXPLANATION'
+    | 'CREATE_EXAMPLE'
+    | 'CREATE_TRACE_GUIDE'
+    | 'DRAW_CLOUD'
+    | 'DRAW_ARROW'
+    | 'PRAISE'
+    | 'RETRACT_ANNOTATION'
+    | 'WRITE_EXAMPLE'
+    | 'DRAW_CHECKMARK';
   regionId: string;
+  sourceRevision?: number;
   targetText: string;
+  semanticTarget?: 'character' | 'syllable' | 'word' | 'phrase' | 'sentence' | 'region';
   suggestedCorrection: string;
   explanation: string;
   hint: string;
+  confidence?: number;
+  anchorHint?: 'below' | 'above' | 'right' | 'left';
 }
 
 /**
- * Queries /api/wonder/tutor (same-origin on Vercel or configured gatewayUrl)
- * to generate pedagogical feedback from server-side DeepSeek / Gemini / OpenAI
- * for recognized board regions without exposing any secret keys in browser bundles.
+ * Browser SSE ReadableStream parser adapted from farhan-beg/riddle-web `src/index.html` (lines 734-758).
+ * - Reads ONLY `choices[0].delta.content` (explicitly ignores reasoning/thinking fields).
+ * - Buffers chunks until newline, validates each complete action against Zod schema, and drops partial JSON.
  */
+export async function parseSseActionStream(
+  body: ReadableStream<Uint8Array>,
+  options?: {
+    expectedRevision?: number;
+    signal?: AbortSignal;
+    onAction?: (action: WonderSpatialTeachingAction, providerId: string) => void;
+  }
+): Promise<{ actions: WonderSpatialTeachingAction[]; providerId: string }> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = '';
+  let contentBuffer = '';
+  let providerId = 'seed-stream-tutor';
+  const actions: WonderSpatialTeachingAction[] = [];
+
+  const flushContentLines = () => {
+    const lines = contentBuffer.split('\n');
+    contentBuffer = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) continue;
+      try {
+        const obj = JSON.parse(trimmed) as { action?: unknown; providerId?: string };
+        if (typeof obj.providerId === 'string') providerId = obj.providerId;
+        const parsed = WonderSpatialTeachingActionSchema.safeParse(obj.action ?? obj);
+        if (!parsed.success) continue;
+        if (
+          typeof options?.expectedRevision === 'number' &&
+          parsed.data.sourceRevision > 0 &&
+          parsed.data.sourceRevision !== options.expectedRevision
+        ) {
+          continue; // Drop stale-revision streamed action
+        }
+        actions.push(parsed.data);
+        options?.onAction?.(parsed.data, providerId);
+      } catch {
+        // Incomplete or non-JSON line; wait cleanly
+      }
+    }
+  };
+
+  try {
+    while (true) {
+      if (options?.signal?.aborted) break;
+      const { value, done } = await reader.read();
+      if (done) break;
+      sseBuffer += decoder.decode(value, { stream: true });
+      const lines = sseBuffer.split(/\r?\n/);
+      sseBuffer = lines.pop() ?? '';
+      for (const rawLine of lines) {
+        if (!rawLine.startsWith('data:')) continue;
+        const payload = rawLine.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const evt = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string; reasoning?: string } }>;
+            action?: unknown;
+            providerId?: string;
+          };
+          if (typeof evt.providerId === 'string') providerId = evt.providerId;
+          const deltaContent = evt?.choices?.[0]?.delta?.content;
+          if (typeof deltaContent === 'string') {
+            contentBuffer += deltaContent;
+            flushContentLines();
+          } else if (evt.action) {
+            contentBuffer += JSON.stringify({ action: evt.action, providerId }) + '\n';
+            flushContentLines();
+          }
+        } catch {
+          // Ignore malformed keepalive chunks
+        }
+      }
+    }
+    if (contentBuffer.trim()) {
+      contentBuffer += '\n';
+      flushContentLines();
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return { actions, providerId };
+}
+
 export async function requestWonderServerTutor(params: {
-  regions: Array<{ regionId: string; recognizedText: string; language: string }>;
+  regions: Array<{
+    regionId: string;
+    recognizedText: string;
+    language: string;
+    contentType?: string;
+  }>;
   guidanceLevel: string;
+  targetLanguage?: 'auto' | 'ko' | 'en';
   intent?: 'ambient' | 'explain' | 'translate' | 'grammar_check' | 'practice_exercise';
+  revision?: number;
+  conversationMemory?: WonderConversationMemoryTurn[];
+  stream?: boolean;
+  onStreamAction?: (action: WonderSpatialTeachingAction, providerId: string) => void;
   gatewayUrl?: string;
   gatewayToken?: string;
   signal?: AbortSignal;
@@ -211,8 +378,8 @@ export async function requestWonderServerTutor(params: {
   const endpoint = cleanGateway
     ? `${cleanGateway}/api/wonder/tutor`
     : gLoc?.origin && /^https?:/i.test(gLoc.origin)
-    ? '/api/wonder/tutor'
-    : '';
+      ? '/api/wonder/tutor'
+      : '';
   if (!endpoint) return { actions: [], providerId: 'offline' };
 
   try {
@@ -227,11 +394,29 @@ export async function requestWonderServerTutor(params: {
       body: JSON.stringify({
         regions: params.regions.slice(0, 12),
         guidanceLevel: params.guidanceLevel,
+        targetLanguage: params.targetLanguage ?? 'auto',
         intent: params.intent ?? 'ambient',
+        revision: params.revision ?? 0,
+        conversationMemory: (params.conversationMemory ?? []).slice(-6),
+        stream: Boolean(params.stream),
       }),
     });
     const ct = resp.headers?.get?.('content-type') || '';
-    if (!resp.ok || !ct.includes('application/json')) {
+    if (!resp.ok) {
+      return { actions: [], providerId: `unavailable_${resp.status}` };
+    }
+    if (ct.includes('text/event-stream') && resp.body) {
+      const streamed = await parseSseActionStream(resp.body, {
+        expectedRevision: params.revision,
+        signal: params.signal,
+        onAction: params.onStreamAction,
+      });
+      return {
+        actions: streamed.actions as WonderServerTutorAction[],
+        providerId: streamed.providerId,
+      };
+    }
+    if (!ct.includes('application/json')) {
       return { actions: [], providerId: `unavailable_${resp.status}` };
     }
     const raw = (await resp.json()) as {
@@ -258,6 +443,7 @@ export function createBrowserVisionProvider(
     cleanGateway.length === 0 &&
     Boolean(gLoc?.origin && /^https?:/i.test(gLoc.origin));
   const hasGateway = cleanGateway.length > 0 || canSameOrigin;
+  // DeepSeek deepseek-flash supports multimodal Vision via https://api.deepseek.com/chat/completions
   const hasDevDirect = !hasGateway && cfg.allowCloudAi && cleanDevKey.length > 0;
 
   if (!cfg.allowCloudAi && !hasGateway) {
@@ -354,22 +540,38 @@ export function createBrowserVisionProvider(
           return {
             status: valid.recognitionStatus,
             recognizedText: valid.recognizedText,
+            rawTranscription: valid.raw_transcription ?? valid.rawTranscription ?? valid.recognizedText,
+            normalizedCandidate: valid.normalizedCandidate,
+            uncertainty: valid.estimated_uncertainty ?? valid.uncertainty,
+            completenessEvidence: valid.completenessEvidence,
+            revision: valid.revision,
+            contentType: valid.content_type,
+            completenessStatus: valid.completeness_status,
+            detectedLanguages: valid.detected_languages,
+            handwritingQualityObservations: valid.handwriting_quality_observations,
             language: valid.language,
             confidence: valid.confidence,
-            alternatives: valid.alternatives,
+            alternatives:
+              valid.alternative_candidates.length > 0
+                ? valid.alternative_candidates
+                : valid.alternatives,
             words: valid.words,
             providerId: String(raw.providerId || 'seed-ai-gateway-vision'),
             latencyMs: Date.now() - t0,
           };
         }
 
-        // DEV-ONLY direct browser call (never recommended for production)
+        // DEV-ONLY direct browser call (session memory only, never persisted to localStorage)
         const isGemini =
           cfg.devDirectProvider === 'gemini' || cleanDevKey.startsWith('AIza');
+        const isDeepSeek =
+          cfg.devDirectProvider === 'deepseek' || (!isGemini && cleanDevKey.startsWith('sk-'));
         const endpoint = isGemini
           ? 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
-          : 'https://api.openai.com/v1/chat/completions';
-        const model = isGemini ? 'gemini-2.5-flash' : 'gpt-4o-mini';
+          : isDeepSeek
+            ? 'https://api.deepseek.com/chat/completions'
+            : 'https://api.openai.com/v1/chat/completions';
+        const model = isGemini ? 'gemini-2.5-flash' : isDeepSeek ? 'deepseek-flash' : 'gpt-4o-mini';
 
         const resp = await gFetch(endpoint, {
           method: 'POST',
@@ -381,13 +583,14 @@ export function createBrowserVisionProvider(
           body: JSON.stringify({
             model,
             temperature: 0.1,
+            ...(isDeepSeek ? { thinking: { type: 'disabled' } } : {}),
             messages: [
               {
                 role: 'user',
                 content: [
                   {
                     type: 'text',
-                    text: 'Read Korean/Vietnamese handwriting in this cropped image. Respond JSON only: {"recognizedText":string,"language":"ko"|"vi"|"en"|"mixed"|"unknown","recognitionStatus":"RECOGNIZED"|"AMBIGUOUS"|"NON_TEXT","confidence":number,"alternatives":[],"words":[]}',
+                    text: 'Read Korean/English/Vietnamese handwriting verbatim (preserve errors & punctuation ".", "?", "!"). Respond JSON only: {"recognizedText":string,"raw_transcription":string,"normalizedCandidate":string,"estimated_uncertainty":number,"completenessEvidence":string,"language":"ko"|"vi"|"en"|"mixed"|"unknown","recognitionStatus":"RECOGNIZED"|"PARTIALLY_RECOGNIZED"|"IN_PROGRESS"|"AMBIGUOUS"|"NON_TEXT","content_type":"single_character"|"hangul_syllable"|"word"|"phrase"|"sentence"|"paragraph"|"user_question"|"free_drawing"|"mixed_content"|"unknown","completeness_status":"complete"|"in_progress"|"fragment"|"non_text"|"unknown","confidence":number,"alternatives":[],"words":[]}',
                   },
                   { type: 'image_url', image_url: { url: req.imageDataUrl } },
                 ],
@@ -426,11 +629,24 @@ export function createBrowserVisionProvider(
         return {
           status: valid.recognitionStatus,
           recognizedText: valid.recognizedText,
+          rawTranscription: valid.raw_transcription ?? valid.rawTranscription ?? valid.recognizedText,
+          normalizedCandidate: valid.normalizedCandidate,
+          uncertainty: valid.estimated_uncertainty ?? valid.uncertainty,
+          completenessEvidence: valid.completenessEvidence,
+          revision: valid.revision,
+          contentType: valid.content_type,
+          completenessStatus: valid.completeness_status,
+          detectedLanguages: valid.detected_languages,
+          handwritingQualityObservations: valid.handwriting_quality_observations,
           language: valid.language,
           confidence: valid.confidence,
           alternatives: valid.alternatives,
           words: valid.words,
-          providerId: 'dev-direct-vision',
+          providerId: isGemini
+            ? 'dev-direct-gemini-vision'
+            : isDeepSeek
+              ? 'dev-direct-deepseek-vision'
+              : 'dev-direct-openai-vision',
           latencyMs: Date.now() - t0,
         };
       } catch {
@@ -445,6 +661,87 @@ export function createBrowserVisionProvider(
           errorCode: 'NETWORK_OR_ABORT',
         };
       }
+    },
+  };
+}
+
+export interface WonderMultimodalClient {
+  recognizeImage(req: ProviderRecognitionRequest): Promise<ProviderRecognitionResult>;
+  recognizeWithContext(
+    req: ProviderRecognitionRequest,
+    recentMemory: WonderConversationMemoryTurn[]
+  ): Promise<ProviderRecognitionResult>;
+  analyzeRecognizedText(
+    params: Parameters<typeof requestWonderServerTutor>[0]
+  ): Promise<{ actions: WonderServerTutorAction[]; providerId: string }>;
+  streamTeachingActions(
+    params: Parameters<typeof requestWonderServerTutor>[0],
+    onAction: (action: WonderSpatialTeachingAction, providerId: string) => void
+  ): Promise<{ actions: WonderServerTutorAction[]; providerId: string }>;
+  cancelRequest(key?: string): void;
+}
+
+/**
+ * Unified Multimodal Provider Interface cleanly decoupling Vision OCR, Contextual Tutor,
+ * SSE Streaming Actions, and AbortController cancellation from canvas UI state.
+ */
+export function createWonderMultimodalClient(cfg: BrowserVisionConfig): WonderMultimodalClient {
+  const inflight = new Map<string, AbortController>();
+  const vision = createBrowserVisionProvider(cfg);
+
+  const trackSignal = (key: string, externalSignal?: AbortSignal): AbortSignal | undefined => {
+    inflight.get(key)?.abort();
+    if (typeof AbortController !== 'function') return externalSignal;
+    const ac = new AbortController();
+    inflight.set(key, ac);
+    if (externalSignal) {
+      if (externalSignal.aborted) ac.abort();
+      else externalSignal.addEventListener('abort', () => ac.abort(), { once: true });
+    }
+    return ac.signal;
+  };
+
+  return {
+    async recognizeImage(req) {
+      if (!vision) {
+        return {
+          status: 'PROVIDER_UNAVAILABLE',
+          recognizedText: '',
+          language: 'unknown',
+          confidence: 0,
+          alternatives: [],
+          providerId: 'unconfigured',
+          latencyMs: 0,
+          errorCode: 'NO_VISION_PROVIDER',
+        };
+      }
+      const sig = trackSignal(`rec:${req.regionId}`, req.signal);
+      return vision.recognizeRegion({ ...req, signal: sig });
+    },
+    async recognizeWithContext(req) {
+      return this.recognizeImage(req);
+    },
+    async analyzeRecognizedText(params) {
+      const sig = trackSignal('tutor', params.signal);
+      return requestWonderServerTutor({ ...params, signal: sig, stream: false });
+    },
+    async streamTeachingActions(params, onAction) {
+      const sig = trackSignal('tutor', params.signal);
+      return requestWonderServerTutor({
+        ...params,
+        signal: sig,
+        stream: true,
+        onStreamAction: onAction,
+      });
+    },
+    cancelRequest(key) {
+      if (key) {
+        inflight.get(key)?.abort();
+        inflight.delete(key);
+        return;
+      }
+      for (const ac of inflight.values()) ac.abort();
+      inflight.clear();
     },
   };
 }

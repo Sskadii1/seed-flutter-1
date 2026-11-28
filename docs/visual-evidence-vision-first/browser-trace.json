@@ -1,0 +1,70 @@
+{
+  "timestamp": "2026-11-27T10:04:30.474Z",
+  "targetUrl": "http://127.0.0.1:4173",
+  "serverHealth": {
+    "ok": true,
+    "providers": {
+      "deepseek": true,
+      "gemini": false,
+      "openai": false
+    },
+    "visionModels": {
+      "deepseek": "deepseek-flash",
+      "gemini": null,
+      "openai": null
+    },
+    "tutorReady": true,
+    "visionReady": true,
+    "authRequired": false
+  },
+  "consoleErrors": [],
+  "scenarios": [
+    {
+      "name": "independent_sa_a",
+      "beforeCount": 1,
+      "afterCount": 2,
+      "pass": true
+    },
+    {
+      "name": "ko_sentence_error",
+      "annotations": 1,
+      "pass": true
+    },
+    {
+      "name": "bilingual_en_vi_ko",
+      "annotations": 3,
+      "pass": true
+    },
+    {
+      "name": "zoom25_batchim_crop",
+      "hasPng": true,
+      "pixelWidth": 851,
+      "pixelHeight": 201,
+      "estimatedVisionTokens": 425,
+      "pass": true
+    },
+    {
+      "name": "n_to_n1_progression",
+      "recognizedRegions": [],
+      "pass": true
+    },
+    {
+      "name": "live_deepseek_freehand_mouse_ocr",
+      "providerId": "deepseek-vision-gateway",
+      "recognizedText": "아",
+      "latencyMs": 1791,
+      "cropWidth": 371,
+      "cropHeight": 352,
+      "pass": true
+    },
+    {
+      "name": "settings_vision_status",
+      "pass": true
+    },
+    {
+      "name": "reload_persistence",
+      "strokeCount": 3,
+      "pass": true
+    }
+  ]
+}

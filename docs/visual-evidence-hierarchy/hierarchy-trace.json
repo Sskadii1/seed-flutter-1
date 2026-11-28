@@ -1,0 +1,64 @@
+{
+  "capturedAt": "2026-11-27T10:05:18.543Z",
+  "trace": [
+    {
+      "step": "T1_sa",
+      "activeTexts": [
+        "사"
+      ],
+      "granularities": [
+        "CHARACTER"
+      ],
+      "nodeCount": 5
+    },
+    {
+      "step": "T2_sarang",
+      "activeTexts": [
+        "사랑"
+      ],
+      "staleCount": 1,
+      "treeTexts": [
+        "사랑"
+      ]
+    },
+    {
+      "step": "T3_saranghae",
+      "activeTexts": [
+        "사랑해"
+      ],
+      "staleCount": 2,
+      "treeTexts": [
+        "사랑해"
+      ]
+    },
+    {
+      "step": "T4_saranghaeyo",
+      "activeTexts": [
+        "사랑해요"
+      ],
+      "staleCount": 3,
+      "treeTexts": [
+        "사랑해요"
+      ]
+    },
+    {
+      "step": "H2_freehand_sentence",
+      "activeCount": 1,
+      "target": "한국어가",
+      "granularity": "SENTENCE"
+    },
+    {
+      "step": "H3_case_c",
+      "activeCount": 0,
+      "perCharSpam": 0,
+      "decoded": "저는 한국어를 공부해요."
+    },
+    {
+      "step": "H4_targeted_errors",
+      "errors": [
+        "먹어요->먹었어요",
+        "사과가->사과를"
+      ]
+    }
+  ]
+}

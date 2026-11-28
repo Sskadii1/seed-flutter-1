@@ -1,0 +1,1022 @@
+{
+  "provenance": "isolated Chrome profile, typed and geometry fixtures, no live providers",
+  "viewport": {
+    "width": 1424,
+    "height": 825
+  },
+  "frames": [
+    {
+      "label": "grouped-typed-reference",
+      "viewport": {
+        "offsetX": 0,
+        "offsetY": 0,
+        "scale": 1
+      },
+      "routes": [
+        {
+          "id": "ann_practice_[\"board_default\",\"st_1_100_155_0_0_0\"]_vowel_orientation:ㅏ/ㅓ",
+          "sourceStrokeIds": [
+            "st_1_100_155_0_0_0",
+            "st_1_100_155_0_0_1",
+            "st_1_100_155_0_0_2"
+          ],
+          "route": {
+            "fromX": 119.3,
+            "fromY": 216.2,
+            "ctrlX": 116.9,
+            "ctrlY": 220.3,
+            "toX": 114.5,
+            "toY": 224.3
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 9.41546630859375
+        }
+      ],
+      "cloudOverlaps": [],
+      "visibleCloudCount": 1,
+      "visibleNoteCount": 1,
+      "completedIds": [
+        "ann_practice_[\"board_default\",\"st_1_100_155_0_0_0\"]_vowel_orientation:ㅏ/ㅓ"
+      ],
+      "targets": [
+        {
+          "id": "ann_practice_[\"board_default\",\"st_1_100_155_0_0_0\"]_vowel_orientation:ㅏ/ㅓ",
+          "text": "아",
+          "strokeIds": [
+            "st_1_100_155_0_0_0",
+            "st_1_100_155_0_0_1",
+            "st_1_100_155_0_0_2"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "four-adjacent-annotations",
+      "viewport": {
+        "offsetX": 0,
+        "offsetY": 0,
+        "scale": 1
+      },
+      "routes": [
+        {
+          "id": "mix_ann_5_0",
+          "sourceStrokeIds": [
+            "mix_st_5_0"
+          ],
+          "route": {
+            "fromX": 137.2,
+            "fromY": 259.5,
+            "ctrlX": 136,
+            "ctrlY": 265,
+            "toX": 134.8,
+            "toY": 270.5
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 11.258772850036621
+        },
+        {
+          "id": "mix_ann_5_1",
+          "sourceStrokeIds": [
+            "mix_st_5_1"
+          ],
+          "route": {
+            "fromX": 404.3,
+            "fromY": 240.6,
+            "ctrlX": 428.7,
+            "ctrlY": 281.8,
+            "toX": 453,
+            "toY": 323
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 95.7154769897461
+        },
+        {
+          "id": "mix_ann_5_2",
+          "sourceStrokeIds": [
+            "mix_st_5_2"
+          ],
+          "route": {
+            "fromX": 743.2,
+            "fromY": 186.8,
+            "ctrlX": 750.7,
+            "ctrlY": 181.9,
+            "toX": 758.3,
+            "toY": 177
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 18.001399993896484
+        },
+        {
+          "id": "mix_ann_5_3",
+          "sourceStrokeIds": [
+            "mix_st_5_3"
+          ],
+          "route": {
+            "fromX": 355.3,
+            "fromY": 486.7,
+            "ctrlX": 354.8,
+            "ctrlY": 492.4,
+            "toX": 354.4,
+            "toY": 498.1
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 11.435611724853516
+        }
+      ],
+      "cloudOverlaps": [],
+      "visibleCloudCount": 4,
+      "visibleNoteCount": 4,
+      "completedIds": [
+        "mix_ann_5_0",
+        "mix_ann_5_1",
+        "mix_ann_5_2",
+        "mix_ann_5_3"
+      ],
+      "targets": [
+        {
+          "id": "mix_ann_5_0",
+          "text": "가",
+          "strokeIds": [
+            "mix_st_5_0"
+          ]
+        },
+        {
+          "id": "mix_ann_5_1",
+          "text": "거",
+          "strokeIds": [
+            "mix_st_5_1"
+          ]
+        },
+        {
+          "id": "mix_ann_5_2",
+          "text": "오",
+          "strokeIds": [
+            "mix_st_5_2"
+          ]
+        },
+        {
+          "id": "mix_ann_5_3",
+          "text": "우",
+          "strokeIds": [
+            "mix_st_5_3"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "pointer-down-over-old-arrow",
+      "viewport": {
+        "offsetX": 0,
+        "offsetY": 0,
+        "scale": 1
+      },
+      "routes": [
+        {
+          "id": "mix_ann_5_0",
+          "sourceStrokeIds": [
+            "mix_st_5_0"
+          ],
+          "route": {
+            "fromX": 119.7,
+            "fromY": 253.6,
+            "ctrlX": 114.3,
+            "ctrlY": 262.1,
+            "toX": 108.8,
+            "toY": 270.5
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 20.110349655151367
+        },
+        {
+          "id": "mix_ann_5_1",
+          "sourceStrokeIds": [
+            "mix_st_5_1"
+          ],
+          "route": {
+            "fromX": 404.3,
+            "fromY": 240.6,
+            "ctrlX": 428.7,
+            "ctrlY": 281.8,
+            "toX": 453,
+            "toY": 323
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 95.7154769897461
+        },
+        {
+          "id": "mix_ann_5_2",
+          "sourceStrokeIds": [
+            "mix_st_5_2"
+          ],
+          "route": {
+            "fromX": 743.2,
+            "fromY": 186.8,
+            "ctrlX": 750.7,
+            "ctrlY": 181.9,
+            "toX": 758.3,
+            "toY": 177
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 18.001399993896484
+        },
+        {
+          "id": "mix_ann_5_3",
+          "sourceStrokeIds": [
+            "mix_st_5_3"
+          ],
+          "route": {
+            "fromX": 355.3,
+            "fromY": 486.7,
+            "ctrlX": 354.8,
+            "ctrlY": 492.4,
+            "toX": 354.4,
+            "toY": 498.1
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 11.435611724853516
+        }
+      ],
+      "cloudOverlaps": [],
+      "visibleCloudCount": 4,
+      "visibleNoteCount": 4,
+      "completedIds": [
+        "mix_ann_5_0",
+        "mix_ann_5_1",
+        "mix_ann_5_2",
+        "mix_ann_5_3"
+      ],
+      "targets": [
+        {
+          "id": "mix_ann_5_0",
+          "text": "가",
+          "strokeIds": [
+            "mix_st_5_0"
+          ]
+        },
+        {
+          "id": "mix_ann_5_1",
+          "text": "거",
+          "strokeIds": [
+            "mix_st_5_1"
+          ]
+        },
+        {
+          "id": "mix_ann_5_2",
+          "text": "오",
+          "strokeIds": [
+            "mix_st_5_2"
+          ]
+        },
+        {
+          "id": "mix_ann_5_3",
+          "text": "우",
+          "strokeIds": [
+            "mix_st_5_3"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "new-unassigned-ink",
+      "viewport": {
+        "offsetX": 0,
+        "offsetY": 0,
+        "scale": 1
+      },
+      "routes": [
+        {
+          "id": "mix_ann_5_0",
+          "sourceStrokeIds": [
+            "mix_st_5_0"
+          ],
+          "route": {
+            "fromX": 125.3,
+            "fromY": 256.7,
+            "ctrlX": 117.1,
+            "ctrlY": 277.6,
+            "toX": 108.8,
+            "toY": 298.5
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 44.938758850097656
+        },
+        {
+          "id": "mix_ann_5_1",
+          "sourceStrokeIds": [
+            "mix_st_5_1"
+          ],
+          "route": {
+            "fromX": 404.3,
+            "fromY": 240.6,
+            "ctrlX": 428.7,
+            "ctrlY": 281.8,
+            "toX": 453,
+            "toY": 323
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 95.7154769897461
+        },
+        {
+          "id": "mix_ann_5_2",
+          "sourceStrokeIds": [
+            "mix_st_5_2"
+          ],
+          "route": {
+            "fromX": 743.2,
+            "fromY": 186.8,
+            "ctrlX": 750.7,
+            "ctrlY": 181.9,
+            "toX": 758.3,
+            "toY": 177
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 18.001399993896484
+        },
+        {
+          "id": "mix_ann_5_3",
+          "sourceStrokeIds": [
+            "mix_st_5_3"
+          ],
+          "route": {
+            "fromX": 355.3,
+            "fromY": 486.7,
+            "ctrlX": 354.8,
+            "ctrlY": 492.4,
+            "toX": 354.4,
+            "toY": 498.1
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 11.435611724853516
+        }
+      ],
+      "cloudOverlaps": [],
+      "visibleCloudCount": 4,
+      "visibleNoteCount": 4,
+      "completedIds": [
+        "mix_ann_5_0",
+        "mix_ann_5_1",
+        "mix_ann_5_2",
+        "mix_ann_5_3"
+      ],
+      "targets": [
+        {
+          "id": "mix_ann_5_0",
+          "text": "가",
+          "strokeIds": [
+            "mix_st_5_0"
+          ]
+        },
+        {
+          "id": "mix_ann_5_1",
+          "text": "거",
+          "strokeIds": [
+            "mix_st_5_1"
+          ]
+        },
+        {
+          "id": "mix_ann_5_2",
+          "text": "오",
+          "strokeIds": [
+            "mix_st_5_2"
+          ]
+        },
+        {
+          "id": "mix_ann_5_3",
+          "text": "우",
+          "strokeIds": [
+            "mix_st_5_3"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "view-0.25-70-60",
+      "viewport": {
+        "scale": 0.25,
+        "offsetX": 70,
+        "offsetY": 60
+      },
+      "routes": [
+        {
+          "id": "mix_ann_5_0",
+          "sourceStrokeIds": [
+            "mix_st_5_0"
+          ],
+          "route": {
+            "fromX": 123.7,
+            "fromY": 112.1,
+            "ctrlX": 129.2,
+            "ctrlY": 99.3,
+            "toX": 134.8,
+            "toY": 86.5
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 27.90291976928711
+        },
+        {
+          "id": "mix_ann_5_1",
+          "sourceStrokeIds": [
+            "mix_st_5_1"
+          ],
+          "route": {
+            "fromX": 350.2,
+            "fromY": 111.5,
+            "ctrlX": 353.2,
+            "ctrlY": 97.7,
+            "toX": 356.2,
+            "toY": 83.8
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 28.34237289428711
+        },
+        {
+          "id": "mix_ann_5_2",
+          "sourceStrokeIds": [
+            "mix_st_5_2"
+          ],
+          "route": {
+            "fromX": 689,
+            "fromY": 249.9,
+            "ctrlX": 683.7,
+            "ctrlY": 263.4,
+            "toX": 678.4,
+            "toY": 277
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 29.099319458007812
+        },
+        {
+          "id": "mix_ann_5_3",
+          "sourceStrokeIds": [
+            "mix_st_5_3"
+          ],
+          "route": {
+            "fromX": 349.6,
+            "fromY": 487.1,
+            "ctrlX": 352,
+            "ctrlY": 498.1,
+            "toX": 354.4,
+            "toY": 509.1
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 22.517545700073242
+        }
+      ],
+      "cloudOverlaps": [],
+      "visibleCloudCount": 4,
+      "visibleNoteCount": 4,
+      "completedIds": [
+        "mix_ann_5_0",
+        "mix_ann_5_1",
+        "mix_ann_5_2",
+        "mix_ann_5_3"
+      ],
+      "targets": [
+        {
+          "id": "mix_ann_5_0",
+          "text": "가",
+          "strokeIds": [
+            "mix_st_5_0"
+          ]
+        },
+        {
+          "id": "mix_ann_5_1",
+          "text": "거",
+          "strokeIds": [
+            "mix_st_5_1"
+          ]
+        },
+        {
+          "id": "mix_ann_5_2",
+          "text": "오",
+          "strokeIds": [
+            "mix_st_5_2"
+          ]
+        },
+        {
+          "id": "mix_ann_5_3",
+          "text": "우",
+          "strokeIds": [
+            "mix_st_5_3"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "view-0.5-100-35",
+      "viewport": {
+        "scale": 0.5,
+        "offsetX": 100,
+        "offsetY": 35
+      },
+      "routes": [
+        {
+          "id": "mix_ann_5_0",
+          "sourceStrokeIds": [
+            "mix_st_5_0"
+          ],
+          "route": {
+            "fromX": 149.3,
+            "fromY": 258,
+            "ctrlX": 154.7,
+            "ctrlY": 283.8,
+            "toX": 160,
+            "toY": 309.5
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 52.599830627441406
+        },
+        {
+          "id": "mix_ann_5_1",
+          "sourceStrokeIds": [
+            "mix_st_5_1"
+          ],
+          "route": {
+            "fromX": 400.1,
+            "fromY": 243.4,
+            "ctrlX": 421.5,
+            "ctrlY": 283.2,
+            "toX": 443,
+            "toY": 323
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 90.42440795898438
+        },
+        {
+          "id": "mix_ann_5_2",
+          "sourceStrokeIds": [
+            "mix_st_5_2"
+          ],
+          "route": {
+            "fromX": 744.4,
+            "fromY": 190.5,
+            "ctrlX": 757.3,
+            "ctrlY": 183.7,
+            "toX": 770.3,
+            "toY": 177
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 29.207271575927734
+        },
+        {
+          "id": "mix_ann_5_3",
+          "sourceStrokeIds": [
+            "mix_st_5_3"
+          ],
+          "route": {
+            "fromX": 349.6,
+            "fromY": 487.1,
+            "ctrlX": 352,
+            "ctrlY": 498.1,
+            "toX": 354.4,
+            "toY": 509.1
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 22.517545700073242
+        }
+      ],
+      "cloudOverlaps": [],
+      "visibleCloudCount": 4,
+      "visibleNoteCount": 4,
+      "completedIds": [
+        "mix_ann_5_0",
+        "mix_ann_5_1",
+        "mix_ann_5_2",
+        "mix_ann_5_3"
+      ],
+      "targets": [
+        {
+          "id": "mix_ann_5_0",
+          "text": "가",
+          "strokeIds": [
+            "mix_st_5_0"
+          ]
+        },
+        {
+          "id": "mix_ann_5_1",
+          "text": "거",
+          "strokeIds": [
+            "mix_st_5_1"
+          ]
+        },
+        {
+          "id": "mix_ann_5_2",
+          "text": "오",
+          "strokeIds": [
+            "mix_st_5_2"
+          ]
+        },
+        {
+          "id": "mix_ann_5_3",
+          "text": "우",
+          "strokeIds": [
+            "mix_st_5_3"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "view-1.5--33--45",
+      "viewport": {
+        "scale": 1.5,
+        "offsetX": -33,
+        "offsetY": -45
+      },
+      "routes": [
+        {
+          "id": "mix_ann_5_0",
+          "sourceStrokeIds": [
+            "mix_st_5_0"
+          ],
+          "route": {
+            "fromX": 161.1,
+            "fromY": 252.1,
+            "ctrlX": 165.5,
+            "ctrlY": 259.8,
+            "toX": 169.9,
+            "toY": 267.5
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 17.736955642700195
+        },
+        {
+          "id": "mix_ann_5_1",
+          "sourceStrokeIds": [
+            "mix_st_5_1"
+          ],
+          "route": {
+            "fromX": 371.9,
+            "fromY": 260.5,
+            "ctrlX": 383.4,
+            "ctrlY": 268.6,
+            "toX": 394.9,
+            "toY": 276.7
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 28.132549285888672
+        },
+        {
+          "id": "mix_ann_5_2",
+          "sourceStrokeIds": [
+            "mix_st_5_2"
+          ],
+          "route": {
+            "fromX": 689,
+            "fromY": 249.9,
+            "ctrlX": 683.7,
+            "ctrlY": 255.4,
+            "toX": 678.4,
+            "toY": 261
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 15.348333358764648
+        }
+      ],
+      "cloudOverlaps": [],
+      "visibleCloudCount": 3,
+      "visibleNoteCount": 4,
+      "completedIds": [
+        "mix_ann_5_0",
+        "mix_ann_5_1",
+        "mix_ann_5_2",
+        "mix_ann_5_3"
+      ],
+      "targets": [
+        {
+          "id": "mix_ann_5_0",
+          "text": "가",
+          "strokeIds": [
+            "mix_st_5_0"
+          ]
+        },
+        {
+          "id": "mix_ann_5_1",
+          "text": "거",
+          "strokeIds": [
+            "mix_st_5_1"
+          ]
+        },
+        {
+          "id": "mix_ann_5_2",
+          "text": "오",
+          "strokeIds": [
+            "mix_st_5_2"
+          ]
+        },
+        {
+          "id": "mix_ann_5_3",
+          "text": "우",
+          "strokeIds": [
+            "mix_st_5_3"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "view-2--50--75",
+      "viewport": {
+        "scale": 2,
+        "offsetX": -50,
+        "offsetY": -75
+      },
+      "routes": [
+        {
+          "id": "mix_ann_5_0",
+          "sourceStrokeIds": [
+            "mix_st_5_0"
+          ],
+          "route": {
+            "fromX": 161.1,
+            "fromY": 252.1,
+            "ctrlX": 165.5,
+            "ctrlY": 259.3,
+            "toX": 169.9,
+            "toY": 266.5
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 16.876007080078125
+        },
+        {
+          "id": "mix_ann_5_1",
+          "sourceStrokeIds": [
+            "mix_st_5_1"
+          ],
+          "route": {
+            "fromX": 371.9,
+            "fromY": 260.5,
+            "ctrlX": 385.5,
+            "ctrlY": 274.8,
+            "toX": 399,
+            "toY": 289
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 39.32760238647461
+        }
+      ],
+      "cloudOverlaps": [],
+      "visibleCloudCount": 3,
+      "visibleNoteCount": 2,
+      "completedIds": [
+        "mix_ann_5_0",
+        "mix_ann_5_1",
+        "mix_ann_5_2",
+        "mix_ann_5_3"
+      ],
+      "targets": [
+        {
+          "id": "mix_ann_5_0",
+          "text": "가",
+          "strokeIds": [
+            "mix_st_5_0"
+          ]
+        },
+        {
+          "id": "mix_ann_5_1",
+          "text": "거",
+          "strokeIds": [
+            "mix_st_5_1"
+          ]
+        },
+        {
+          "id": "mix_ann_5_2",
+          "text": "오",
+          "strokeIds": [
+            "mix_st_5_2"
+          ]
+        },
+        {
+          "id": "mix_ann_5_3",
+          "text": "우",
+          "strokeIds": [
+            "mix_st_5_3"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "view-2--290--160",
+      "viewport": {
+        "scale": 2,
+        "offsetX": -290,
+        "offsetY": -160
+      },
+      "routes": [
+        {
+          "id": "mix_ann_5_0",
+          "sourceStrokeIds": [
+            "mix_st_5_0"
+          ],
+          "route": {
+            "fromX": 161.1,
+            "fromY": 252.1,
+            "ctrlX": 165.5,
+            "ctrlY": 259.3,
+            "toX": 169.9,
+            "toY": 266.5
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 16.876007080078125
+        },
+        {
+          "id": "mix_ann_5_1",
+          "sourceStrokeIds": [
+            "mix_st_5_1"
+          ],
+          "route": {
+            "fromX": 371.9,
+            "fromY": 260.5,
+            "ctrlX": 383.4,
+            "ctrlY": 268.1,
+            "toX": 394.9,
+            "toY": 275.7
+          },
+          "inkCollision": false,
+          "cloudCollision": false,
+          "textCollision": false,
+          "incorrectBinding": false,
+          "tooLong": false,
+          "length": 27.568828582763672
+        }
+      ],
+      "cloudOverlaps": [],
+      "visibleCloudCount": 3,
+      "visibleNoteCount": 2,
+      "completedIds": [
+        "mix_ann_5_0",
+        "mix_ann_5_1",
+        "mix_ann_5_2",
+        "mix_ann_5_3"
+      ],
+      "targets": [
+        {
+          "id": "mix_ann_5_0",
+          "text": "가",
+          "strokeIds": [
+            "mix_st_5_0"
+          ]
+        },
+        {
+          "id": "mix_ann_5_1",
+          "text": "거",
+          "strokeIds": [
+            "mix_st_5_1"
+          ]
+        },
+        {
+          "id": "mix_ann_5_2",
+          "text": "오",
+          "strokeIds": [
+            "mix_st_5_2"
+          ]
+        },
+        {
+          "id": "mix_ann_5_3",
+          "text": "우",
+          "strokeIds": [
+            "mix_st_5_3"
+          ]
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "arrowToInkCollisionRate": {
+      "hits": 0,
+      "samples": 28,
+      "rate": 0
+    },
+    "arrowToCloudCollisionRate": {
+      "hits": 0,
+      "samples": 28,
+      "rate": 0
+    },
+    "arrowToTextCollisionRate": {
+      "hits": 0,
+      "samples": 28,
+      "rate": 0
+    },
+    "incorrectArrowTargetBindingRate": {
+      "hits": 0,
+      "samples": 28,
+      "rate": 0
+    },
+    "unnecessaryLongArrowRate": {
+      "hits": 0,
+      "samples": 28,
+      "rate": 0
+    },
+    "groupedFeedbackAnnotationDensity": {
+      "hits": 1,
+      "samples": 4,
+      "rate": 0.25
+    }
+  }
+}
